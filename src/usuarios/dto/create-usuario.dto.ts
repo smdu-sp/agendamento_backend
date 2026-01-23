@@ -45,4 +45,9 @@ export class CreateUsuarioDto {
   @IsOptional()
   @IsString({ message: 'Tem de ser texto.' })
   avatar?: string;
+
+  @ApiProperty({ description: 'ID da Coordenadoria' })
+  @IsOptional()
+  @IsString({ message: 'ID da coordenadoria inválido.' })
+  coordenadoriaId?: string;
 }

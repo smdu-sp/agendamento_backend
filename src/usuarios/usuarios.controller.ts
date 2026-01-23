@@ -23,7 +23,7 @@ import { BuscarNovoResponseDTO, UsuarioAutorizadoResponseDTO, UsuarioDesativadoR
 export class UsuariosController {
   constructor(private readonly usuariosService: UsuariosService) {}
 
-  @Permissoes('ADM')
+  @Permissoes('ADM', 'DEV')
   @Post('criar')
   criar(
     @UsuarioAtual() usuario: Usuario,
@@ -44,13 +44,13 @@ export class UsuariosController {
     return this.usuariosService.buscarTudo(+pagina, +limite, busca, status, permissao);
   }
 
-  @Permissoes('ADM')
+  @Permissoes('ADM', 'DEV')
   @Get('buscar-por-id/:id')
   buscarPorId(@Param('id') id: string): Promise<UsuarioResponseDTO> {
     return this.usuariosService.buscarPorId(id);
   }
 
-  @Permissoes('ADM', 'TEC', 'USR')
+  @Permissoes('ADM', 'DEV', 'TEC', 'USR')
   @Patch('atualizar/:id')
   atualizar(
     @UsuarioAtual() usuario: Usuario,
@@ -60,25 +60,33 @@ export class UsuariosController {
     return this.usuariosService.atualizar(usuario, id, updateUsuarioDto);
   }
 
-  @Permissoes('ADM')
+  @Permissoes('ADM', 'DEV')
   @Get('lista-completa')
   listaCompleta(): Promise<UsuarioResponseDTO[]> {
     return this.usuariosService.listaCompleta();
   }
 
-  @Permissoes('ADM')
+  @Permissoes('ADM', 'DEV')
   @Get('buscar-tecnicos')
   buscarTecnicos(): Promise<{ id: string, nome: string }[]> {
     return this.usuariosService.buscarTecnicos();
   }
 
-  @Permissoes('ADM')
+  @Get('buscar-tecnicos-por-coordenadoria/:coordenadoriaId')
+  buscarTecnicosPorCoordenadoria(
+    @Param('coordenadoriaId') coordenadoriaId: string,
+    @UsuarioAtual() usuario?: Usuario,
+  ): Promise<{ id: string, nome: string, login: string }[]> {
+    return this.usuariosService.buscarTecnicosPorCoordenadoria(coordenadoriaId, usuario);
+  }
+
+  @Permissoes('ADM', 'DEV')
   @Delete('desativar/:id')
   excluir(@Param('id') id: string): Promise<UsuarioDesativadoResponseDTO> {
     return this.usuariosService.excluir(id);
   }
 
-  @Permissoes('ADM')
+  @Permissoes('ADM', 'DEV')
   @Patch('autorizar/:id')
   autorizarUsuario(@Param('id') id: string): Promise<UsuarioAutorizadoResponseDTO> {
     return this.usuariosService.autorizaUsuario(id);
@@ -89,7 +97,7 @@ export class UsuariosController {
     return this.usuariosService.validaUsuario(usuario.id);
   }
 
-  @Permissoes('ADM')
+  @Permissoes('ADM', 'DEV')
   @Get('buscar-novo/:login')
   buscarNovo(@Param('login') login: string): Promise<BuscarNovoResponseDTO> {
     return this.usuariosService.buscarNovo(login);

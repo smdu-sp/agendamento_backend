@@ -12,6 +12,7 @@ enum Permissao {
   ADM
   TEC
   USR
+  PONTO_FOCAL
 }
 
 enum StatusAgendamento {
@@ -21,20 +22,22 @@ enum StatusAgendamento {
 }
 
 model Usuario {
-  id            String    @id @default(uuid())
-  nome          String
-  nomeSocial    String?
-  login         String    @unique
-  email         String    @unique
-  permissao     Permissao @default(USR)
-  status        Boolean   @default(true)
-  avatar        String?   @db.Text
+  id              String          @id @default(uuid())
+  nome            String
+  nomeSocial      String?
+  login           String          @unique
+  email           String          @unique
+  permissao       Permissao       @default(USR)
+  status          Boolean         @default(true)
+  avatar          String?         @db.Text
+  coordenadoriaId String?
 
-  ultimoLogin   DateTime  @default(now())
-  criadoEm      DateTime  @default(now())
-  atualizadoEm  DateTime  @default(now()) @updatedAt
+  ultimoLogin     DateTime        @default(now())
+  criadoEm        DateTime        @default(now())
+  atualizadoEm    DateTime        @default(now()) @updatedAt
 
-  agendamentos  Agendamento[]
+  agendamentos    Agendamento[]
+  coordenadoria   Coordenadoria?  @relation(fields: [coordenadoriaId], references: [id], onDelete: SetNull)
 
   @@map("usuarios")
 }
@@ -45,14 +48,16 @@ model Agendamento {
   rg              String?
   cpf             String?
   processo        String?
-  dataInicio      DateTime
-  dataFim         DateTime
+  dataHora        DateTime          // Data e hora do agendamento (campo único da planilha)
+  dataFim         DateTime?         // Calculado automaticamente (dataHora + duração padrão), opcional para permitir ajustes
+  duracao         Int?              @default(60) // Duração em minutos (padrão 60 minutos)
   importado       Boolean           @default(false)
   legado          Boolean           @default(false)
   resumo          String?           @db.Text
   motivoId        String?
   coordenadoriaId String?
   tecnicoId       String?
+  tecnicoRF       String?           // RF do técnico da planilha (ex: 8544409) para fazer match com login (d854440)
   email           String?
   status          StatusAgendamento @default(AGENDADO)
 
@@ -82,12 +87,14 @@ model Motivo {
 model Coordenadoria {
   id            String   @id @default(uuid())
   sigla         String   @unique
+  nome          String?  // Nome completo da coordenadoria
   status        Boolean  @default(true)
 
   criadoEm      DateTime @default(now())
   atualizadoEm  DateTime @default(now()) @updatedAt
 
-  agendamentos    Agendamento[]
+  agendamentos  Agendamento[]
+  usuarios      Usuario[]
 
   @@map("coordenadorias")
 }

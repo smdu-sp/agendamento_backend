@@ -40,6 +40,7 @@ export class UsuariosService {
       where: { id },
       select: { permissao: true }
     });
+    if (!usuario) throw new ForbiddenException('Usuário não encontrado.');
     if (usuario.permissao === 'DEV') return true;
     return permissoes.some(permissao => permissao === usuario.permissao);
   }
@@ -54,11 +55,34 @@ export class UsuariosService {
 
   async buscarTecnicos(): Promise<{ id: string, nome: string }[]> {
     const lista: { id: string, nome: string }[] = await this.prisma.usuario.findMany({
-      where: { permissao: 'TEC' },
+      where: { permissao: 'TEC', status: true },
       orderBy: { nome: 'asc' },
       select: { id: true, nome: true },
     });
     if (!lista || lista.length == 0) throw new ForbiddenException('Nenhum técnico encontrado.');
+    return lista;
+  }
+
+  async buscarTecnicosPorCoordenadoria(
+    coordenadoriaId: string,
+    usuarioLogado?: Usuario,
+  ): Promise<{ id: string, nome: string, login: string }[]> {
+    // Se for ponto focal, só pode buscar técnicos da sua própria coordenadoria
+    if (usuarioLogado && usuarioLogado.permissao === 'PONTO_FOCAL') {
+      if (usuarioLogado.coordenadoriaId !== coordenadoriaId) {
+        throw new ForbiddenException('Você só pode buscar técnicos da sua coordenadoria.');
+      }
+    }
+
+    const lista: { id: string, nome: string, login: string }[] = await this.prisma.usuario.findMany({
+      where: { 
+        permissao: 'TEC', 
+        status: true,
+        coordenadoriaId,
+      },
+      orderBy: { nome: 'asc' },
+      select: { id: true, nome: true, login: true },
+    });
     return lista;
   }
 
@@ -193,7 +217,7 @@ export class UsuariosService {
     let nome: string, email: string, login: string;
     try {
       const usuario = await client.search(
-        process.env.LDAP_BASE,
+        process.env.LDAP_BASE_DN || process.env.LDAP_BASE,
         {
           filter: `(&(name=${nome_busca})(company=SMUL))`,
           scope: 'sub',
@@ -224,27 +248,55 @@ export class UsuariosService {
     const client: LdapClient = new LdapClient({
       url: process.env.LDAP_SERVER,
     });
+    
+    const ldapBase = process.env.LDAP_BASE_DN || process.env.LDAP_BASE;
+    if (!ldapBase) {
+      throw new InternalServerErrorException('LDAP_BASE_DN não configurado no ambiente.');
+    }
+    
     try {
       await client.bind(`${process.env.USER_LDAP}${process.env.LDAP_DOMAIN}`, process.env.PASS_LDAP);
     } catch (error) {
-      throw new InternalServerErrorException('Não foi possível buscar o usuário.');
+      console.error('Erro ao conectar no LDAP:', error);
+      throw new InternalServerErrorException('Não foi possível conectar ao servidor LDAP.');
     }
+    
     let nome: string, email: string;
     try {
       const usuario = await client.search(
-        process.env.LDAP_BASE,
+        ldapBase,
         {
-          filter: `(&(samaccountname=${login})(company=SMUL))`,
+          filter: `(&(sAMAccountName=${login})(company=SMUL))`,
           scope: 'sub',
-          attributes: ['name', 'mail'],
+          attributes: ['name', 'mail', 'sAMAccountName'],
         }
       );
+      
+      if (!usuario.searchEntries || usuario.searchEntries.length === 0) {
+        await client.unbind();
+        throw new NotFoundException('Usuário não encontrado no LDAP.');
+      }
+      
       const { name, mail } = usuario.searchEntries[0];
+      if (!name || !mail) {
+        await client.unbind();
+        throw new NotFoundException('Dados do usuário incompletos no LDAP.');
+      }
+      
       nome = name.toString();
       email = mail.toString().toLowerCase();
-    } catch (error) {
       await client.unbind();
-      throw new InternalServerErrorException('Não foi possível buscar o usuário.');
+    } catch (error) {
+      try {
+        await client.unbind();
+      } catch (unbindError) {
+        // Ignora erro de unbind se já foi feito
+      }
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      console.error('Erro ao buscar usuário no LDAP:', error);
+      throw new InternalServerErrorException('Não foi possível buscar o usuário no LDAP.');
     }
     if (!nome || !email) throw new NotFoundException('Usuário não encontrado.');
     return { login, nome, email };
