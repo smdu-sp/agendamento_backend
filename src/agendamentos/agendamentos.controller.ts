@@ -258,6 +258,8 @@ export class AgendamentosController {
         console.log('📋 Usando nomes de colunas:', nomesColunasFinais.filter(c => c !== ''));
         
         // Converte as linhas de dados para objetos
+        // Começa do índice 1 porque o índice 0 é o cabeçalho (linha 9)
+        // O índice 1 corresponde à primeira linha de dados (linha 10)
         for (let i = 1; i < dadosArray.length; i++) {
           const linha = dadosArray[i] as any[];
           if (!linha || linha.length === 0) continue;
@@ -276,18 +278,27 @@ export class AgendamentosController {
         }
       }
       
-      // Remove a primeira linha se ela for o próprio cabeçalho (verificação de segurança)
+      // Remove a primeira linha APENAS se ela for EXATAMENTE o cabeçalho (verificação de segurança)
+      // Verifica se TODOS os valores da primeira linha correspondem aos cabeçalhos esperados
       if (dados && dados.length > 0 && !Array.isArray(dados[0])) {
         const primeiraLinha = dados[0];
-        const primeiraLinhaStr = Object.values(primeiraLinha).join('|').toLowerCase();
-        const cabecalhosEsperadosLower = cabecalhosEsperados.map(c => c.toLowerCase());
-        const ehCabecalho = cabecalhosEsperadosLower.some(cab => 
-          primeiraLinhaStr.includes(cab.substring(0, Math.min(5, cab.length)))
-        );
+        const valoresPrimeiraLinha = Object.values(primeiraLinha).map(v => String(v || '').trim().toLowerCase());
+        const cabecalhosEsperadosLower = cabecalhosEsperados.map(c => c.trim().toLowerCase());
         
-        if (ehCabecalho) {
-          console.log('⚠️ Primeira linha era cabeçalho, removendo...');
-          dados = dados.slice(1);
+        // Verifica se TODOS os valores não vazios da primeira linha correspondem a cabeçalhos
+        // Isso evita remover linhas de dados que possam conter palavras dos cabeçalhos
+        const valoresNaoVazios = valoresPrimeiraLinha.filter(v => v !== '');
+        if (valoresNaoVazios.length > 0) {
+          const todosSaoCabecalhos = valoresNaoVazios.every(valor => 
+            cabecalhosEsperadosLower.some(cab => valor === cab || valor.includes(cab))
+          );
+          
+          // Só remove se TODOS os valores forem cabeçalhos E houver pelo menos 3 correspondências
+          if (todosSaoCabecalhos && valoresNaoVazios.length >= 3) {
+            console.log('⚠️ Primeira linha era cabeçalho, removendo...');
+            console.log('   Valores da primeira linha:', valoresNaoVazios);
+            dados = dados.slice(1);
+          }
         }
       }
       

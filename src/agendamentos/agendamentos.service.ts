@@ -37,6 +37,28 @@ export class AgendamentosService {
   }
 
   /**
+   * Padroniza nome do munícipe: primeira letra de cada palavra em maiúscula, demais em minúscula
+   * Ex: "AMANDA CELLI FILHO" -> "Amanda Celli Filho"
+   * Ex: "joão da silva" -> "João Da Silva"
+   */
+  private padronizarNome(nome: string | null): string | null {
+    if (!nome || typeof nome !== 'string') return nome;
+    
+    // Remove espaços extras e divide em palavras
+    const palavras = nome.trim().split(/\s+/);
+    
+    // Capitaliza primeira letra de cada palavra e deixa o resto em minúscula
+    const palavrasFormatadas = palavras.map(palavra => {
+      if (!palavra) return palavra;
+      // Primeira letra em maiúscula, resto em minúscula
+      return palavra.charAt(0).toUpperCase() + palavra.slice(1).toLowerCase();
+    });
+    
+    // Junta as palavras com espaço
+    return palavrasFormatadas.join(' ');
+  }
+
+  /**
    * Busca ou cria técnico baseado no RF da planilha
    */
   private async buscarOuCriarTecnicoPorRF(rf: string): Promise<string | null> {
@@ -129,6 +151,7 @@ export class AgendamentosService {
     const agendamento: Agendamento = await this.prisma.agendamento.create({
       data: {
         ...createAgendamentoDto,
+        municipe: createAgendamentoDto.municipe ? this.padronizarNome(createAgendamentoDto.municipe) : null,
         tecnicoId,
         dataHora,
         dataFim,
@@ -339,6 +362,7 @@ export class AgendamentosService {
 
     const dataAtualizacao: any = {
       ...updateAgendamentoDto,
+      municipe: updateAgendamentoDto.municipe ? this.padronizarNome(updateAgendamentoDto.municipe) : undefined,
       tecnicoId,
     };
 
@@ -396,6 +420,9 @@ export class AgendamentosService {
   ): Promise<{ importados: number; erros: number }> {
     let importados = 0;
     let erros = 0;
+    let linhasPuladas = 0; // Contador de linhas puladas sem erro
+
+    console.log(`📊 Total de linhas na planilha: ${dadosPlanilha.length}`);
 
     if (!dadosPlanilha || !Array.isArray(dadosPlanilha)) {
       throw new Error('Dados da planilha inválidos');
@@ -421,6 +448,10 @@ export class AgendamentosService {
       
       // Pula linhas vazias ou com todos os valores null/undefined/vazios
       if (!linha || Object.keys(linha).length === 0) {
+        if (index < 10) {
+          console.log(`Linha ${index + 1}: Pula linha completamente vazia`);
+        }
+        linhasPuladas++;
         continue;
       }
       
@@ -439,6 +470,10 @@ export class AgendamentosService {
       });
       
       if (!temValores) {
+        if (index < 10) {
+          console.log(`Linha ${index + 1}: Pula linha com apenas cabeçalho ou valores ignorados`);
+        }
+        linhasPuladas++;
         continue; // Pula linhas completamente vazias ou com apenas cabeçalho
       }
       
@@ -575,6 +610,8 @@ export class AgendamentosService {
         processo = processo ? String(processo).trim() : null;
         cpf = cpf ? String(cpf).trim() : null;
         municipe = municipe ? String(municipe).trim() : null;
+        // Padroniza o nome do munícipe (primeira letra de cada palavra em maiúscula)
+        municipe = this.padronizarNome(municipe);
         tipoAgendamento = tipoAgendamento ? String(tipoAgendamento).trim() : null;
         coordenadoriaSigla = coordenadoriaSigla ? String(coordenadoriaSigla).trim() : null;
         tecnicoNome = tecnicoNome ? String(tecnicoNome).trim() : null;
@@ -589,11 +626,16 @@ export class AgendamentosService {
         if (!dataHora || dataHora === 'null' || dataHora === 'undefined' || dataHora === '') {
           // Se não tem data/hora E não tem outros dados válidos, é uma linha vazia - pula sem contar como erro
           if (!temDadosValidos) {
+            if (index < 10) {
+              console.log(`Linha ${index + 1}: Pula linha sem data/hora e sem dados válidos`);
+            }
+            linhasPuladas++;
             continue; // Pula linha completamente vazia sem contar como erro
           }
-          if (index < 3) { // Log apenas as primeiras 3 linhas para não poluir o console
-            console.log(`Linha ${index + 1}: Data/Hora não encontrada. Chaves disponíveis:`, Object.keys(linha));
-            console.log(`Dados completos da linha:`, JSON.stringify(linha, null, 2));
+          // Se tem dados válidos mas não tem data/hora, conta como erro
+          if (index < 10) {
+            console.log(`Linha ${index + 1}: ERRO - Data/Hora não encontrada mas tem dados válidos. Chaves:`, Object.keys(linha));
+            console.log(`Dados:`, { processo, cpf, municipe });
           }
           erros++;
           continue;
@@ -603,7 +645,17 @@ export class AgendamentosService {
         if (!temDadosValidos && dataHora) {
           // Verifica se a data/hora parece válida (não é apenas um cabeçalho)
           const dataHoraStr = String(dataHora).trim();
-          if (!/\d{2}\/\d{2}\/\d{4}/.test(dataHoraStr) && !(dataHora instanceof Date)) {
+          // Verifica se parece uma data válida (formato brasileiro ou ISO)
+          const pareceDataValida = /\d{2}\/\d{2}\/\d{4}/.test(dataHoraStr) || 
+                                   /^\d{4}-\d{2}-\d{2}/.test(dataHoraStr) ||
+                                   (dataHora instanceof Date);
+          
+          if (!pareceDataValida) {
+            // Log para debug - pode ser uma linha válida que está sendo pulada incorretamente
+            if (index < 10) {
+              console.log(`Linha ${index + 1}: Pula linha com data/hora mas sem dados válidos. Data/Hora: "${dataHoraStr}", Dados:`, { processo, cpf, municipe });
+            }
+            linhasPuladas++;
             continue; // Pula se não parece uma data válida
           }
         }
@@ -759,7 +811,7 @@ export class AgendamentosService {
         try {
           await this.prisma.agendamento.create({
             data: {
-              municipe: municipe ? String(municipe).trim() : null,
+              municipe: municipe ? this.padronizarNome(String(municipe).trim()) : null,
               cpf: cpf ? String(cpf).trim() : null,
               processo: processo ? String(processo).trim() : null,
               dataHora: dataHoraObj,
@@ -805,6 +857,13 @@ export class AgendamentosService {
       }
     }
 
+    console.log(`📊 Resumo da importação:`);
+    console.log(`   Total de linhas na planilha: ${dadosPlanilha.length}`);
+    console.log(`   Linhas importadas com sucesso: ${importados}`);
+    console.log(`   Linhas com erro: ${erros}`);
+    console.log(`   Linhas puladas (vazias/inválidas): ${linhasPuladas}`);
+    console.log(`   Total processado: ${importados + erros + linhasPuladas}`);
+    
     return { importados, erros };
   }
 }
