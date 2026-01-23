@@ -60,8 +60,10 @@ export class AgendamentosService {
 
   /**
    * Busca ou cria técnico baseado no RF da planilha
+   * @param rf - RF do técnico
+   * @param coordenadoriaId - ID da coordenadoria (opcional, será atribuída ao técnico se fornecido)
    */
-  private async buscarOuCriarTecnicoPorRF(rf: string): Promise<string | null> {
+  private async buscarOuCriarTecnicoPorRF(rf: string, coordenadoriaId?: string): Promise<string | null> {
     if (!rf) return null;
 
     const login = this.rfParaLogin(rf);
@@ -71,6 +73,24 @@ export class AgendamentosService {
       // Busca usuário existente pelo login (independente da permissão)
       const usuario = await this.usuariosService.buscarPorLogin(login);
       if (usuario) {
+        // Busca o usuário completo do Prisma para verificar coordenadoriaId
+        const usuarioCompleto = await this.prisma.usuario.findUnique({
+          where: { id: usuario.id },
+          select: { id: true, coordenadoriaId: true, nome: true, login: true },
+        });
+        
+        // Se o técnico já existe mas não tem coordenadoria e uma foi fornecida, atualiza
+        if (coordenadoriaId && usuarioCompleto && !usuarioCompleto.coordenadoriaId) {
+          try {
+            await this.prisma.usuario.update({
+              where: { id: usuarioCompleto.id },
+              data: { coordenadoriaId },
+            });
+            console.log(`Coordenadoria ${coordenadoriaId} atribuída ao técnico ${usuarioCompleto.nome} (${usuarioCompleto.login})`);
+          } catch (error) {
+            console.log(`Erro ao atualizar coordenadoria do técnico ${usuarioCompleto.login}:`, error.message);
+          }
+        }
         return usuario.id;
       }
 
@@ -95,7 +115,7 @@ export class AgendamentosService {
         };
       }
 
-      // Cria o técnico com permissão TEC (seja do LDAP ou básico)
+      // Cria o técnico com permissão TEC e coordenadoria (seja do LDAP ou básico)
       if (dadosLDAP) {
         try {
           const novoTecnico = await this.usuariosService.criar(
@@ -105,10 +125,11 @@ export class AgendamentosService {
               email: dadosLDAP.email,
               permissao: 'TEC' as any,
               status: true,
+              coordenadoriaId: coordenadoriaId || undefined,
             },
             { permissao: 'ADM' } as Usuario, // Admin temporário para criação
           );
-          console.log(`Técnico ${dadosLDAP.nome} (${dadosLDAP.login}) criado automaticamente com permissão TEC`);
+          console.log(`Técnico ${dadosLDAP.nome} (${dadosLDAP.login}) criado automaticamente com permissão TEC${coordenadoriaId ? ` e coordenadoria ${coordenadoriaId}` : ''}`);
           return novoTecnico.id;
         } catch (error) {
           console.log(`Erro ao criar técnico ${dadosLDAP.login}:`, error.message);
@@ -139,6 +160,7 @@ export class AgendamentosService {
     if (createAgendamentoDto.tecnicoRF && !tecnicoId) {
       tecnicoId = await this.buscarOuCriarTecnicoPorRF(
         createAgendamentoDto.tecnicoRF,
+        createAgendamentoDto.coordenadoriaId,
       );
     }
 
@@ -352,11 +374,22 @@ export class AgendamentosService {
     updateAgendamentoDto: UpdateAgendamentoDto,
   ): Promise<AgendamentoResponseDTO> {
     let tecnicoId = updateAgendamentoDto.tecnicoId;
+    
+    // Busca o agendamento atual para obter a coordenadoria se não fornecida no DTO
+    let coordenadoriaIdParaTecnico: string | undefined = updateAgendamentoDto.coordenadoriaId;
+    if (!coordenadoriaIdParaTecnico) {
+      const agendamentoAtual = await this.prisma.agendamento.findUnique({
+        where: { id },
+        select: { coordenadoriaId: true },
+      });
+      coordenadoriaIdParaTecnico = agendamentoAtual?.coordenadoriaId || undefined;
+    }
 
     // Se tem tecnicoRF mas não tem tecnicoId, tenta buscar/criar técnico
     if (updateAgendamentoDto.tecnicoRF && !tecnicoId) {
       tecnicoId = await this.buscarOuCriarTecnicoPorRF(
         updateAgendamentoDto.tecnicoRF,
+        coordenadoriaIdParaTecnico,
       );
     }
 
@@ -793,12 +826,12 @@ export class AgendamentosService {
             // Não atribui técnico - será atribuído manualmente pelo ponto focal
             tecnicoId = null;
           } else if (tecnicoRF) {
-            // Se tem RF, busca ou cria técnico normalmente
-            tecnicoId = await this.buscarOuCriarTecnicoPorRF(String(tecnicoRF));
+            // Se tem RF, busca ou cria técnico normalmente com a coordenadoria da planilha
+            tecnicoId = await this.buscarOuCriarTecnicoPorRF(String(tecnicoRF), coordenadoriaIdFinal || undefined);
           }
         } else if (tecnicoRF) {
-          // Se não tem nome do técnico mas tem RF, busca ou cria técnico normalmente
-          tecnicoId = await this.buscarOuCriarTecnicoPorRF(String(tecnicoRF));
+          // Se não tem nome do técnico mas tem RF, busca ou cria técnico normalmente com a coordenadoria da planilha
+          tecnicoId = await this.buscarOuCriarTecnicoPorRF(String(tecnicoRF), coordenadoriaIdFinal || undefined);
         }
 
         // Validação final antes de criar
