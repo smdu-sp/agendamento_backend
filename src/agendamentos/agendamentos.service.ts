@@ -624,17 +624,32 @@ export class AgendamentosService {
           const matchBR = dataHoraLimpa.match(/(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})(?::(\d{2}))?/);
           if (matchBR) {
             const [, dia, mes, ano, hora, minuto, segundo] = matchBR;
-            dataHoraObj = new Date(
+            // Cria a data como UTC para salvar exatamente como está na planilha
+            // Isso evita conversões automáticas de timezone que causam diferença de horas
+            dataHoraObj = new Date(Date.UTC(
               parseInt(ano),
               parseInt(mes) - 1, // Mês é 0-indexed
               parseInt(dia),
               parseInt(hora),
               parseInt(minuto),
               segundo ? parseInt(segundo) : 0
-            );
+            ));
           } else {
             // Tenta parse direto (formato ISO ou outros)
-            dataHoraObj = new Date(dataHoraLimpa);
+            const parsedDate = new Date(dataHoraLimpa);
+            if (!isNaN(parsedDate.getTime())) {
+              // Extrai os componentes da data e cria como UTC
+              // Isso garante que a hora será salva exatamente como interpretada
+              const ano = parsedDate.getFullYear();
+              const mes = parsedDate.getMonth();
+              const dia = parsedDate.getDate();
+              const hora = parsedDate.getHours();
+              const minuto = parsedDate.getMinutes();
+              const segundo = parsedDate.getSeconds();
+              dataHoraObj = new Date(Date.UTC(ano, mes, dia, hora, minuto, segundo));
+            } else {
+              dataHoraObj = parsedDate;
+            }
           }
         } 
         // Se for número (serial do Excel)
@@ -644,10 +659,12 @@ export class AgendamentosService {
           const diasDesde1900 = Math.floor(dataHora);
           const fracaoDia = dataHora - diasDesde1900;
           
-          dataHoraObj = new Date((diasDesde1900 - 25569) * 86400 * 1000);
-          // Adiciona a fração do dia (hora)
+          // Cria a data base em UTC
+          const dataBase = new Date(Date.UTC(1900, 0, 1)); // 1/1/1900 em UTC
+          dataHoraObj = new Date(dataBase.getTime() + (diasDesde1900 - 2) * 86400 * 1000); // -2 porque Excel conta 1900 como ano bissexto
+          // Adiciona a fração do dia (hora) em UTC
           if (fracaoDia > 0) {
-            dataHoraObj.setMilliseconds(dataHoraObj.getMilliseconds() + fracaoDia * 86400 * 1000);
+            dataHoraObj = new Date(dataHoraObj.getTime() + fracaoDia * 86400 * 1000);
           }
         } 
         else {
