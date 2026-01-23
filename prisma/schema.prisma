@@ -19,6 +19,8 @@ enum StatusAgendamento {
   AGENDADO
   CANCELADO
   CONCLUIDO
+  ATENDIDO
+  NAO_REALIZADO
 }
 
 model Usuario {

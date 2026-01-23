@@ -215,11 +215,11 @@ export class AgendamentosService {
         status !== '' && {
           status: status as StatusAgendamento,
         }),
-      ...(dataInicio && {
-        dataHora: { gte: new Date(dataInicio) },
-      }),
-      ...(dataFim && {
-        dataHora: { lte: new Date(dataFim) },
+      ...(dataInicio && dataFim && {
+        dataHora: { 
+          gte: new Date(dataInicio + 'T00:00:00.000Z'), // Início do dia em UTC
+          lte: new Date(dataFim + 'T23:59:59.999Z'), // Fim do dia em UTC
+        },
       }),
       ...(filtroCoordenadoria && {
         coordenadoriaId: filtroCoordenadoria,
