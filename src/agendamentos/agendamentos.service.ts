@@ -221,7 +221,7 @@ export class AgendamentosService {
         // Técnico só vê seus próprios agendamentos
         tecnicoId = usuarioLogado.id;
       }
-      // ADM e DEV veem todos
+      // ADM, DEV e PORTARIA veem todos
     }
 
     const searchParams = {
@@ -372,16 +372,57 @@ export class AgendamentosService {
   async atualizar(
     id: string,
     updateAgendamentoDto: UpdateAgendamentoDto,
+    usuarioLogado?: Usuario,
   ): Promise<AgendamentoResponseDTO> {
+    // Busca o agendamento atual para validações
+    const agendamentoAtual = await this.prisma.agendamento.findUnique({
+      where: { id },
+      select: { coordenadoriaId: true },
+    });
+    
+    if (!agendamentoAtual) {
+      throw new NotFoundException('Agendamento não encontrado.');
+    }
+
+    // Validação: Ponto Focal só pode atualizar agendamentos da sua coordenadoria
+    if (usuarioLogado && usuarioLogado.permissao === 'PONTO_FOCAL') {
+      if (!usuarioLogado.coordenadoriaId) {
+        throw new ForbiddenException('Você não possui coordenadoria atribuída.');
+      }
+      if (agendamentoAtual.coordenadoriaId !== usuarioLogado.coordenadoriaId) {
+        throw new ForbiddenException('Você só pode atualizar agendamentos da sua coordenadoria.');
+      }
+      // Garante que o ponto focal não altere a coordenadoria do agendamento
+      if (updateAgendamentoDto.coordenadoriaId && updateAgendamentoDto.coordenadoriaId !== usuarioLogado.coordenadoriaId) {
+        throw new ForbiddenException('Você não pode alterar a coordenadoria do agendamento.');
+      }
+    }
+
     let tecnicoId = updateAgendamentoDto.tecnicoId;
+    
+    // Validação: Ponto Focal só pode atribuir técnicos da sua coordenadoria
+    if (usuarioLogado && usuarioLogado.permissao === 'PONTO_FOCAL' && tecnicoId) {
+      const tecnico = await this.prisma.usuario.findUnique({
+        where: { id: tecnicoId },
+        select: { coordenadoriaId: true, permissao: true },
+      });
+      
+      if (!tecnico) {
+        throw new NotFoundException('Técnico não encontrado.');
+      }
+      
+      if (tecnico.permissao !== 'TEC') {
+        throw new ForbiddenException('O usuário selecionado não é um técnico.');
+      }
+      
+      if (tecnico.coordenadoriaId !== usuarioLogado.coordenadoriaId) {
+        throw new ForbiddenException('Você só pode atribuir técnicos da sua coordenadoria.');
+      }
+    }
     
     // Busca o agendamento atual para obter a coordenadoria se não fornecida no DTO
     let coordenadoriaIdParaTecnico: string | undefined = updateAgendamentoDto.coordenadoriaId;
     if (!coordenadoriaIdParaTecnico) {
-      const agendamentoAtual = await this.prisma.agendamento.findUnique({
-        where: { id },
-        select: { coordenadoriaId: true },
-      });
       coordenadoriaIdParaTecnico = agendamentoAtual?.coordenadoriaId || undefined;
     }
 
@@ -391,6 +432,18 @@ export class AgendamentosService {
         updateAgendamentoDto.tecnicoRF,
         coordenadoriaIdParaTecnico,
       );
+      
+      // Validação adicional: se o técnico foi criado/buscado por RF, verifica se é da coordenadoria do ponto focal
+      if (usuarioLogado && usuarioLogado.permissao === 'PONTO_FOCAL' && tecnicoId) {
+        const tecnico = await this.prisma.usuario.findUnique({
+          where: { id: tecnicoId },
+          select: { coordenadoriaId: true },
+        });
+        
+        if (tecnico && tecnico.coordenadoriaId !== usuarioLogado.coordenadoriaId) {
+          throw new ForbiddenException('O técnico encontrado não pertence à sua coordenadoria.');
+        }
+      }
     }
 
     const dataAtualizacao: any = {
@@ -790,16 +843,35 @@ export class AgendamentosService {
           }
         }
 
-        // Busca coordenadoria pela sigla se fornecida
+        // Busca coordenadoria pela sigla se fornecida, ou cria automaticamente se não existir
         let coordenadoriaIdFinal = coordenadoriaId;
         if (coordenadoriaSigla && !coordenadoriaIdFinal) {
           try {
             const coordenadoriaEncontrada = await this.coordenadoriasService.buscarPorSigla(String(coordenadoriaSigla).trim());
             if (coordenadoriaEncontrada) {
               coordenadoriaIdFinal = coordenadoriaEncontrada.id;
+            } else {
+              // Coordenadoria não encontrada, cria automaticamente
+              try {
+                const novaCoordenadoria = await this.coordenadoriasService.criar({
+                  sigla: String(coordenadoriaSigla).trim(),
+                  nome: String(coordenadoriaSigla).trim(), // Usa a sigla como nome se não houver nome específico
+                  status: true,
+                });
+                coordenadoriaIdFinal = novaCoordenadoria.id;
+                console.log(`Coordenadoria ${coordenadoriaSigla} criada automaticamente`);
+              } catch (criarError) {
+                // Se falhar ao criar (ex: sigla duplicada), tenta buscar novamente
+                const coordenadoriaRecriada = await this.coordenadoriasService.buscarPorSigla(String(coordenadoriaSigla).trim());
+                if (coordenadoriaRecriada) {
+                  coordenadoriaIdFinal = coordenadoriaRecriada.id;
+                } else {
+                  console.log(`Erro ao criar coordenadoria ${coordenadoriaSigla}:`, criarError instanceof Error ? criarError.message : String(criarError));
+                }
+              }
             }
           } catch (error) {
-            console.log(`Coordenadoria ${coordenadoriaSigla} não encontrada`);
+            console.log(`Erro ao buscar coordenadoria ${coordenadoriaSigla}:`, error instanceof Error ? error.message : String(error));
           }
         }
 
@@ -818,9 +890,28 @@ export class AgendamentosService {
                 const coordenadoria = await this.coordenadoriasService.buscarPorSigla(siglaCoordenadoria);
                 if (coordenadoria) {
                   coordenadoriaIdFinal = coordenadoria.id;
+                } else {
+                  // Coordenadoria não encontrada, cria automaticamente
+                  try {
+                    const novaCoordenadoria = await this.coordenadoriasService.criar({
+                      sigla: siglaCoordenadoria,
+                      nome: siglaCoordenadoria, // Usa a sigla como nome se não houver nome específico
+                      status: true,
+                    });
+                    coordenadoriaIdFinal = novaCoordenadoria.id;
+                    console.log(`Coordenadoria ${siglaCoordenadoria} criada automaticamente para TÉCNICO RESERVA`);
+                  } catch (criarError) {
+                    // Se falhar ao criar (ex: sigla duplicada), tenta buscar novamente
+                    const coordenadoriaRecriada = await this.coordenadoriasService.buscarPorSigla(siglaCoordenadoria);
+                    if (coordenadoriaRecriada) {
+                      coordenadoriaIdFinal = coordenadoriaRecriada.id;
+                    } else {
+                      console.log(`Erro ao criar coordenadoria ${siglaCoordenadoria} para TÉCNICO RESERVA:`, criarError instanceof Error ? criarError.message : String(criarError));
+                    }
+                  }
                 }
               } catch (error) {
-                console.log(`Coordenadoria ${siglaCoordenadoria} não encontrada para TÉCNICO RESERVA`);
+                console.log(`Erro ao buscar coordenadoria ${siglaCoordenadoria} para TÉCNICO RESERVA:`, error instanceof Error ? error.message : String(error));
               }
             }
             // Não atribui técnico - será atribuído manualmente pelo ponto focal

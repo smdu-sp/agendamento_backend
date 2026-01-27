@@ -1,2 +1,0 @@
--- AlterTable
-ALTER TABLE `agendamentos` ADD COLUMN `status` ENUM('AGENDADO', 'CANCELADO') NOT NULL DEFAULT 'AGENDADO';

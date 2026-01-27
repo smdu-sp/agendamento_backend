@@ -4,12 +4,14 @@ CREATE TABLE `usuarios` (
     `nome` VARCHAR(191) NOT NULL,
     `login` VARCHAR(191) NOT NULL,
     `email` VARCHAR(191) NOT NULL,
-    `permissao` ENUM('DEV', 'ADM', 'USR') NOT NULL DEFAULT 'USR',
+    `permissao` ENUM('DEV', 'ADM', 'TEC', 'USR', 'PONTO_FOCAL', 'PORTARIA') NOT NULL DEFAULT 'USR',
     `status` BOOLEAN NOT NULL DEFAULT true,
     `avatar` TEXT NULL,
     `ultimoLogin` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `criadoEm` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `atualizadoEm` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `nomeSocial` VARCHAR(191) NULL,
+    `coordenadoriaId` VARCHAR(191) NULL,
 
     UNIQUE INDEX `usuarios_login_key`(`login`),
     UNIQUE INDEX `usuarios_email_key`(`email`),
@@ -23,14 +25,18 @@ CREATE TABLE `agendamentos` (
     `rg` VARCHAR(191) NULL,
     `cpf` VARCHAR(191) NULL,
     `processo` VARCHAR(191) NULL,
-    `dataInicio` DATETIME(3) NOT NULL,
-    `dataFim` DATETIME(3) NOT NULL,
+    `dataHora` DATETIME(3) NOT NULL,
+    `dataFim` DATETIME(3) NULL,
+    `duracao` INTEGER NULL DEFAULT 60,
     `importado` BOOLEAN NOT NULL DEFAULT false,
     `legado` BOOLEAN NOT NULL DEFAULT false,
     `resumo` TEXT NULL,
     `motivoId` VARCHAR(191) NULL,
     `coordenadoriaId` VARCHAR(191) NULL,
     `tecnicoId` VARCHAR(191) NULL,
+    `tecnicoRF` VARCHAR(191) NULL,
+    `email` VARCHAR(191) NULL,
+    `status` ENUM('AGENDADO', 'CANCELADO', 'CONCLUIDO', 'ATENDIDO', 'NAO_REALIZADO') NOT NULL DEFAULT 'AGENDADO',
     `criadoEm` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `atualizadoEm` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
 
@@ -53,6 +59,7 @@ CREATE TABLE `motivos` (
 CREATE TABLE `coordenadorias` (
     `id` VARCHAR(191) NOT NULL,
     `sigla` VARCHAR(191) NOT NULL,
+    `nome` VARCHAR(191) NULL,
     `status` BOOLEAN NOT NULL DEFAULT true,
     `criadoEm` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `atualizadoEm` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -60,6 +67,9 @@ CREATE TABLE `coordenadorias` (
     UNIQUE INDEX `coordenadorias_sigla_key`(`sigla`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- AddForeignKey
+ALTER TABLE `usuarios` ADD CONSTRAINT `usuarios_coordenadoriaId_fkey` FOREIGN KEY (`coordenadoriaId`) REFERENCES `coordenadorias`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE `agendamentos` ADD CONSTRAINT `agendamentos_motivoId_fkey` FOREIGN KEY (`motivoId`) REFERENCES `motivos`(`id`) ON DELETE NO ACTION ON UPDATE CASCADE;

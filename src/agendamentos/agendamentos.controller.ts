@@ -41,6 +41,7 @@ export class AgendamentosController {
     return this.agendamentosService.criar(createAgendamentoDto);
   }
 
+  @Permissoes('ADM', 'DEV', 'TEC', 'PONTO_FOCAL', 'PORTARIA')
   @Get('buscar-tudo')
   buscarTudo(
     @Query('pagina') pagina?: string,
@@ -66,6 +67,7 @@ export class AgendamentosController {
     );
   }
 
+  @Permissoes('ADM', 'DEV', 'TEC', 'PONTO_FOCAL', 'PORTARIA')
   @Get('buscar-do-dia')
   buscarDoDia(
     @UsuarioAtual() usuario?: Usuario,
@@ -73,18 +75,20 @@ export class AgendamentosController {
     return this.agendamentosService.buscarDoDia(usuario);
   }
 
+  @Permissoes('ADM', 'DEV', 'TEC', 'PONTO_FOCAL', 'PORTARIA')
   @Get('buscar-por-id/:id')
   buscarPorId(@Param('id') id: string): Promise<AgendamentoResponseDTO> {
     return this.agendamentosService.buscarPorId(id);
   }
 
-  @Permissoes('ADM', 'DEV', 'TEC')
+  @Permissoes('ADM', 'DEV', 'TEC', 'PONTO_FOCAL')
   @Patch('atualizar/:id')
   atualizar(
     @Param('id') id: string,
     @Body() updateAgendamentoDto: UpdateAgendamentoDto,
+    @UsuarioAtual() usuario?: Usuario,
   ): Promise<AgendamentoResponseDTO> {
-    return this.agendamentosService.atualizar(id, updateAgendamentoDto);
+    return this.agendamentosService.atualizar(id, updateAgendamentoDto, usuario);
   }
 
   @Permissoes('ADM', 'DEV')
