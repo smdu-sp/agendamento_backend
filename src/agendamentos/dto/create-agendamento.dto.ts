@@ -45,10 +45,10 @@ export class CreateAgendamentoDto {
   @IsString()
   resumo?: string;
 
-  @ApiProperty({ description: 'ID do motivo' })
+  @ApiProperty({ description: 'ID do tipo de agendamento' })
   @IsOptional()
   @IsString()
-  motivoId?: string;
+  tipoAgendamentoId?: string;
 
   @ApiProperty({ description: 'ID da coordenadoria' })
   @IsOptional()

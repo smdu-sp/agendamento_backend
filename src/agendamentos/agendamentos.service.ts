@@ -180,7 +180,8 @@ export class AgendamentosService {
         duracao,
       },
       include: {
-        motivo: true,
+        tipoAgendamento: true,
+        motivoNaoAtendimento: true,
         coordenadoria: true,
         tecnico: {
           select: {
@@ -266,7 +267,8 @@ export class AgendamentosService {
       skip: (pagina - 1) * limite,
       take: limite,
       include: {
-        motivo: true,
+        tipoAgendamento: true,
+        motivoNaoAtendimento: true,
         coordenadoria: true,
         tecnico: {
           select: {
@@ -335,7 +337,8 @@ export class AgendamentosService {
       where: whereClause,
       orderBy: { dataHora: 'asc' },
       include: {
-        motivo: true,
+        tipoAgendamento: true,
+        motivoNaoAtendimento: true,
         coordenadoria: true,
         tecnico: {
           select: {
@@ -354,7 +357,8 @@ export class AgendamentosService {
     const agendamento = await this.prisma.agendamento.findUnique({
       where: { id },
       include: {
-        motivo: true,
+        tipoAgendamento: true,
+        motivoNaoAtendimento: true,
         coordenadoria: true,
         tecnico: {
           select: {
@@ -472,11 +476,17 @@ export class AgendamentosService {
       dataAtualizacao.dataFim = this.calcularDataFim(dataHora, updateAgendamentoDto.duracao);
     }
 
+    // Ao marcar como ATENDIDO ou AGENDADO, limpa o motivo de não atendimento
+    if (updateAgendamentoDto.status === 'ATENDIDO' || updateAgendamentoDto.status === 'AGENDADO') {
+      dataAtualizacao.motivoNaoAtendimentoId = null;
+    }
+
     const agendamentoAtualizado = await this.prisma.agendamento.update({
       data: dataAtualizacao,
       where: { id },
       include: {
-        motivo: true,
+        tipoAgendamento: true,
+        motivoNaoAtendimento: true,
         coordenadoria: true,
         tecnico: {
           select: {
@@ -823,23 +833,23 @@ export class AgendamentosService {
         const duracao = 60; // Duração padrão de 60 minutos
         const dataFim = this.calcularDataFim(dataHoraObj, duracao);
 
-        // Busca ou cria motivo se necessário (usando Tipo de Agendamento)
-        let motivoId: string | undefined;
+        // Busca ou cria tipo de agendamento se necessário
+        let tipoAgendamentoId: string | undefined;
         if (tipoAgendamento) {
           try {
-            const motivo = await this.prisma.motivo.findUnique({
+            const tipo = await this.prisma.tipoAgendamento.findUnique({
               where: { texto: String(tipoAgendamento) },
             });
-            if (motivo) {
-              motivoId = motivo.id;
+            if (tipo) {
+              tipoAgendamentoId = tipo.id;
             } else {
-              const novoMotivo = await this.prisma.motivo.create({
+              const novoTipo = await this.prisma.tipoAgendamento.create({
                 data: { texto: String(tipoAgendamento), status: true },
               });
-              motivoId = novoMotivo.id;
+              tipoAgendamentoId = novoTipo.id;
             }
           } catch (error) {
-            console.log(`Erro ao criar/buscar motivo: ${error instanceof Error ? error.message : String(error)}`);
+            console.log(`Erro ao criar/buscar tipo de agendamento: ${error instanceof Error ? error.message : String(error)}`);
           }
         }
 
@@ -942,14 +952,14 @@ export class AgendamentosService {
               dataFim,
               duracao,
               resumo: tipoAgendamento ? String(tipoAgendamento).trim() : null,
-              motivoId,
+              tipoAgendamentoId,
               coordenadoriaId: coordenadoriaIdFinal || null,
-            tecnicoId,
-            tecnicoRF: tecnicoRF ? String(tecnicoRF).trim() : null,
-            email: email || null,
-            importado: true,
-          },
-        });
+              tecnicoId,
+              tecnicoRF: tecnicoRF ? String(tecnicoRF).trim() : null,
+              email: email || null,
+              importado: true,
+            },
+          });
 
           importados++;
         } catch (dbError) {

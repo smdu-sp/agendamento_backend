@@ -28,32 +28,46 @@ model Usuario {
 }
 
 model Agendamento {
-  id              String            @id @default(uuid())
-  municipe        String?
-  rg              String?
-  cpf             String?
-  processo        String?
-  dataHora        DateTime
-  dataFim         DateTime?
-  duracao         Int?              @default(60)
-  importado       Boolean           @default(false)
-  legado          Boolean           @default(false)
-  resumo          String?           @db.Text
-  motivoId        String?
-  coordenadoriaId String?
-  tecnicoId       String?
-  tecnicoRF       String?
-  email           String?
-  status          StatusAgendamento @default(AGENDADO)
+  id                      String            @id @default(uuid())
+  municipe                String?
+  rg                      String?
+  cpf                     String?
+  processo                String?
+  dataHora                DateTime
+  dataFim                 DateTime?
+  duracao                 Int?              @default(60)
+  importado               Boolean           @default(false)
+  legado                  Boolean           @default(false)
+  resumo                  String?           @db.Text
+  tipoAgendamentoId       String?
+  motivoNaoAtendimentoId  String?
+  coordenadoriaId         String?
+  tecnicoId               String?
+  tecnicoRF               String?
+  email                   String?
+  status                  StatusAgendamento @default(AGENDADO)
 
-  criadoEm        DateTime          @default(now())
-  atualizadoEm    DateTime          @default(now()) @updatedAt
+  criadoEm                DateTime          @default(now())
+  atualizadoEm            DateTime          @default(now()) @updatedAt
 
-  motivo          Motivo?           @relation(fields: [motivoId], references: [id], onDelete: NoAction)
-  coordenadoria   Coordenadoria?    @relation(fields: [coordenadoriaId], references: [id], onDelete: NoAction)
-  tecnico         Usuario?         @relation(fields: [tecnicoId], references: [id], onDelete: NoAction)
+  tipoAgendamento         TipoAgendamento?  @relation(fields: [tipoAgendamentoId], references: [id], onDelete: NoAction)
+  motivoNaoAtendimento    Motivo?           @relation(fields: [motivoNaoAtendimentoId], references: [id], onDelete: NoAction)
+  coordenadoria           Coordenadoria?    @relation(fields: [coordenadoriaId], references: [id], onDelete: NoAction)
+  tecnico                 Usuario?          @relation(fields: [tecnicoId], references: [id], onDelete: NoAction)
 
   @@map("agendamentos")
+}
+
+model TipoAgendamento {
+  id           String        @id @default(uuid())
+  texto        String        @unique
+  status       Boolean       @default(true)
+  criadoEm     DateTime      @default(now())
+  atualizadoEm DateTime      @default(now()) @updatedAt
+
+  agendamentos Agendamento[]
+
+  @@map("tipos_agendamento")
 }
 
 model Motivo {
