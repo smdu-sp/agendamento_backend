@@ -1,21 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
-import {
-  IsBoolean,
-  IsDateString,
-  IsOptional,
-  IsString,
-} from 'class-validator';
+import { IsBoolean, IsDateString, IsOptional, IsString } from 'class-validator';
 
 export class CreateAgendamentoDto {
   @ApiProperty({ description: 'Nome do munícipe' })
   @IsOptional()
   @IsString()
   municipe?: string;
-
-  @ApiProperty({ description: 'RG do munícipe' })
-  @IsOptional()
-  @IsString()
-  rg?: string;
 
   @ApiProperty({ description: 'CPF do munícipe' })
   @IsOptional()
@@ -31,14 +21,13 @@ export class CreateAgendamentoDto {
   @IsDateString()
   dataHora: string;
 
-  @ApiProperty({ description: 'Data e hora de fim (opcional, calculado automaticamente se não fornecido)' })
+  @ApiProperty({
+    description:
+      'Data e hora de fim (opcional, calculado automaticamente se não fornecido)',
+  })
   @IsOptional()
   @IsDateString()
   dataFim?: string;
-
-  @ApiProperty({ description: 'Duração em minutos (padrão 60 minutos)' })
-  @IsOptional()
-  duracao?: number;
 
   @ApiProperty({ description: 'Resumo do agendamento' })
   @IsOptional()
@@ -49,6 +38,14 @@ export class CreateAgendamentoDto {
   @IsOptional()
   @IsString()
   tipoAgendamentoId?: string;
+
+  @ApiProperty({
+    description:
+      'Texto do tipo de agendamento (se não existir, será cadastrado automaticamente)',
+  })
+  @IsOptional()
+  @IsString()
+  tipoAgendamentoTexto?: string;
 
   @ApiProperty({ description: 'ID da coordenadoria' })
   @IsOptional()

@@ -1,21 +1,22 @@
 import { PartialType } from '@nestjs/swagger';
 import { CreateAgendamentoDto } from './create-agendamento.dto';
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEnum, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsOptional, IsString } from 'class-validator';
 import { StatusAgendamento } from '@prisma/client';
 
 export class UpdateAgendamentoDto extends PartialType(CreateAgendamentoDto) {
-  @ApiProperty({ description: 'Status do agendamento', enum: StatusAgendamento })
+  @ApiProperty({
+    description: 'Status do agendamento',
+    enum: StatusAgendamento,
+  })
   @IsOptional()
   @IsEnum(StatusAgendamento)
   status?: StatusAgendamento;
 
-  @ApiProperty({ description: 'Duração em minutos' })
-  @IsOptional()
-  @IsNumber()
-  duracao?: number;
-
-  @ApiProperty({ description: 'ID do motivo de não atendimento (quando status NAO_REALIZADO)' })
+  @ApiProperty({
+    description:
+      'ID do motivo de não atendimento (quando status NAO_REALIZADO)',
+  })
   @IsOptional()
   @IsString()
   motivoNaoAtendimentoId?: string;

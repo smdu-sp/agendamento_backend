@@ -622,7 +622,7 @@ describe('Usuarios.service testes unitários', () => {
       email: 'inativo@example.com',
       status: false,
       avatar: 'avatar-inativo.png',
-      permissao: $Enums.Permissao.USR,
+      permissao: $Enums.Permissao.PORTARIA,
       ultimoLogin: new Date('2024-01-01'),
       criadoEm: new Date('2024-01-01'),
       atualizadoEm: new Date('2024-01-01'),

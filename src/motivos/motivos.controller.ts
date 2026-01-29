@@ -24,7 +24,7 @@ import {
 export class MotivosController {
   constructor(private readonly motivosService: MotivosService) {}
 
-  @Permissoes('ADM', 'DEV')
+  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
   @Post('criar')
   criar(@Body() createMotivoDto: CreateMotivoDto): Promise<MotivoResponseDTO> {
     return this.motivosService.criar(createMotivoDto);

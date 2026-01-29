@@ -41,7 +41,7 @@ export class AgendamentosController {
     return this.agendamentosService.criar(createAgendamentoDto);
   }
 
-  @Permissoes('ADM', 'DEV', 'TEC', 'PONTO_FOCAL', 'PORTARIA')
+  @Permissoes('ADM', 'DEV', 'TEC', 'PONTO_FOCAL', 'COORDENADOR', 'PORTARIA')
   @Get('buscar-tudo')
   buscarTudo(
     @Query('pagina') pagina?: string,
@@ -67,7 +67,7 @@ export class AgendamentosController {
     );
   }
 
-  @Permissoes('ADM', 'DEV', 'TEC', 'PONTO_FOCAL', 'PORTARIA')
+  @Permissoes('ADM', 'DEV', 'TEC', 'PONTO_FOCAL', 'COORDENADOR', 'PORTARIA')
   @Get('buscar-do-dia')
   buscarDoDia(
     @UsuarioAtual() usuario?: Usuario,
@@ -75,20 +75,24 @@ export class AgendamentosController {
     return this.agendamentosService.buscarDoDia(usuario);
   }
 
-  @Permissoes('ADM', 'DEV', 'TEC', 'PONTO_FOCAL', 'PORTARIA')
+  @Permissoes('ADM', 'DEV', 'TEC', 'PONTO_FOCAL', 'COORDENADOR', 'PORTARIA')
   @Get('buscar-por-id/:id')
   buscarPorId(@Param('id') id: string): Promise<AgendamentoResponseDTO> {
     return this.agendamentosService.buscarPorId(id);
   }
 
-  @Permissoes('ADM', 'DEV', 'TEC', 'PONTO_FOCAL')
+  @Permissoes('ADM', 'DEV', 'TEC', 'PONTO_FOCAL', 'COORDENADOR')
   @Patch('atualizar/:id')
   atualizar(
     @Param('id') id: string,
     @Body() updateAgendamentoDto: UpdateAgendamentoDto,
     @UsuarioAtual() usuario?: Usuario,
   ): Promise<AgendamentoResponseDTO> {
-    return this.agendamentosService.atualizar(id, updateAgendamentoDto, usuario);
+    return this.agendamentosService.atualizar(
+      id,
+      updateAgendamentoDto,
+      usuario,
+    );
   }
 
   @Permissoes('ADM', 'DEV')
@@ -120,8 +124,9 @@ export class AgendamentosController {
       new ParseFilePipe({
         validators: [
           new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 }), // 10MB
-          new FileTypeValidator({ 
-            fileType: /^(application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|application\/vnd\.ms-excel|application\/excel)$/ 
+          new FileTypeValidator({
+            fileType:
+              /^(application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|application\/vnd\.ms-excel|application\/excel)$/,
           }),
         ],
       }),
@@ -136,7 +141,7 @@ export class AgendamentosController {
 
       // Lê o arquivo Excel
       const workbook = XLSX.read(arquivo.buffer, { type: 'buffer' });
-      
+
       if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
         throw new Error('Planilha vazia ou inválida');
       }
@@ -155,71 +160,103 @@ export class AgendamentosController {
         header: 1, // Retorna como array de arrays (não como objetos)
         defval: null,
       });
-      
+
       console.log('Linhas de teste lidas:', linhasTeste.length);
-      
+
       // Procura a linha que contém os cabeçalhos esperados
       let linhaCabeçalho = 8; // Padrão: linha 9 (índice 8)
-      const cabecalhosEsperados = ['Nro. Processo', 'Nro.Protocolo', 'CPF', 'Requerente', 'Tipo Agendamento', 'Local de Atendimento', 'Técnico', 'RF', 'E-mail', 'Agendado para'];
-      
+      const cabecalhosEsperados = [
+        'Nro. Processo',
+        'Nro.Protocolo',
+        'CPF',
+        'Requerente',
+        'Tipo Agendamento',
+        'Local de Atendimento',
+        'Técnico',
+        'RF',
+        'E-mail',
+        'Agendado para',
+      ];
+
       console.log('🔍 Procurando cabeçalhos nas primeiras 20 linhas...');
-      
+
       for (let i = 0; i < linhasTeste.length; i++) {
         const linha = linhasTeste[i] as any[];
         if (linha && linha.length > 0) {
           // Filtra valores não vazios
-          const valoresNaoVazios = linha.filter(c => c && String(c).trim() !== '');
-          
+          const valoresNaoVazios = linha.filter(
+            (c) => c && String(c).trim() !== '',
+          );
+
           if (valoresNaoVazios.length === 0) {
             continue; // Pula linhas completamente vazias
           }
-          
-          const linhaStr = linha.map(c => String(c || '').trim()).join('|').toLowerCase();
-          
+
+          const linhaStr = linha
+            .map((c) => String(c || '').trim())
+            .join('|')
+            .toLowerCase();
+
           // Verifica correspondência exata primeiro
-          const matchesExatos = cabecalhosEsperados.filter(cab => 
-            linha.some(c => {
+          const matchesExatos = cabecalhosEsperados.filter((cab) =>
+            linha.some((c) => {
               const celula = String(c || '').trim();
-              return celula === cab || celula.toLowerCase() === cab.toLowerCase();
-            })
+              return (
+                celula === cab || celula.toLowerCase() === cab.toLowerCase()
+              );
+            }),
           );
-          
+
           // Verifica correspondência parcial
-          const matchesParciais = cabecalhosEsperados.filter(cab => {
+          const matchesParciais = cabecalhosEsperados.filter((cab) => {
             const cabLower = cab.toLowerCase();
             const palavrasCab = cabLower.split(/\s+/);
-            return palavrasCab.some(palavra => 
-              linhaStr.includes(palavra) && palavra.length >= 3
+            return palavrasCab.some(
+              (palavra) => linhaStr.includes(palavra) && palavra.length >= 3,
             );
           });
-          
-          const matches = matchesExatos.length > 0 ? matchesExatos : matchesParciais;
-          
+
+          const matches =
+            matchesExatos.length > 0 ? matchesExatos : matchesParciais;
+
           if (matches.length >= 4) {
             linhaCabeçalho = i;
-            console.log(`✅ Cabeçalhos encontrados na linha ${i + 1} (índice ${i}):`, matches);
+            console.log(
+              `✅ Cabeçalhos encontrados na linha ${i + 1} (índice ${i}):`,
+              matches,
+            );
             console.log(`   Conteúdo da linha:`, valoresNaoVazios);
             break;
           } else if (matches.length > 0) {
-            console.log(`⚠️ Linha ${i + 1}: ${matches.length} cabeçalhos encontrados (esperado >= 4):`, matches);
+            console.log(
+              `⚠️ Linha ${i + 1}: ${matches.length} cabeçalhos encontrados (esperado >= 4):`,
+              matches,
+            );
             console.log(`   Valores não vazios:`, valoresNaoVazios);
           }
         }
       }
-      
-      console.log(`📌 Usando linha ${linhaCabeçalho + 1} (índice ${linhaCabeçalho}) como cabeçalho`);
-      
+
+      console.log(
+        `📌 Usando linha ${linhaCabeçalho + 1} (índice ${linhaCabeçalho}) como cabeçalho`,
+      );
+
       // A linha de cabeçalho é linhaCabeçalho + 1 (1-based)
       const linhaInicio = linhaCabeçalho + 1;
-      
+
       console.log(`📊 Lendo planilha com cabeçalho na linha ${linhaInicio}`);
-      
+
       // Lê a linha de cabeçalho para obter os nomes das colunas
       const linhaCabecalhoArray = linhasTeste[linhaCabeçalho] as any[];
-      const nomesColunas = linhaCabecalhoArray.map(c => String(c || '').trim());
-      
-      console.log('📋 Nomes das colunas detectados:', nomesColunas.filter(c => c !== ''));
-      
+      const nomesColunas = linhaCabecalhoArray.map((c) =>
+        String(c || '').trim(),
+      );
+
+      console.log(
+        '📋 Nomes das colunas detectados:',
+        nomesColunas.filter((c) => c !== ''),
+      );
+
       // Lê os dados como array de arrays começando da linha de cabeçalho
       // Isso evita o erro "invalid column -1" que acontece quando passamos array para header
       let dadosArray = XLSX.utils.sheet_to_json(worksheet, {
@@ -228,7 +265,7 @@ export class AgendamentosController {
         defval: null,
         raw: false,
       }) as any[][];
-      
+
       // Se não conseguiu ler, tenta sem range
       if (!dadosArray || dadosArray.length === 0) {
         console.log('⚠️ Tentativa com range falhou, tentando sem range...');
@@ -237,66 +274,85 @@ export class AgendamentosController {
           defval: null,
           raw: false,
         }) as any[][];
-        
+
         // Pula as linhas antes do cabeçalho
         if (dadosArray && dadosArray.length > linhaCabeçalho) {
           dadosArray = dadosArray.slice(linhaCabeçalho);
         }
       }
-      
+
       // Converte array de arrays para objetos usando os nomes de colunas
       let dados: any[] = [];
       if (dadosArray && dadosArray.length > 0) {
         console.log('📋 Convertendo array de arrays para objetos...');
-        
+
         // A primeira linha do array deve ser o cabeçalho
         const cabecalhoLinha = dadosArray[0] as any[];
-        
+
         // Se a primeira linha não corresponde ao cabeçalho esperado, usa o cabeçalho detectado
-        const usarCabecalhoDetectado = !cabecalhoLinha || 
-          !cabecalhoLinha.some(c => nomesColunas.includes(String(c || '').trim()));
-        
-        const nomesColunasFinais = usarCabecalhoDetectado ? nomesColunas : 
-          cabecalhoLinha.map(c => String(c || '').trim());
-        
-        console.log('📋 Usando nomes de colunas:', nomesColunasFinais.filter(c => c !== ''));
-        
+        const usarCabecalhoDetectado =
+          !cabecalhoLinha ||
+          !cabecalhoLinha.some((c) =>
+            nomesColunas.includes(String(c || '').trim()),
+          );
+
+        const nomesColunasFinais = usarCabecalhoDetectado
+          ? nomesColunas
+          : cabecalhoLinha.map((c) => String(c || '').trim());
+
+        console.log(
+          '📋 Usando nomes de colunas:',
+          nomesColunasFinais.filter((c) => c !== ''),
+        );
+
         // Converte as linhas de dados para objetos
         // Começa do índice 1 porque o índice 0 é o cabeçalho (linha 9)
         // O índice 1 corresponde à primeira linha de dados (linha 10)
         for (let i = 1; i < dadosArray.length; i++) {
           const linha = dadosArray[i] as any[];
           if (!linha || linha.length === 0) continue;
-          
+
           const objeto: any = {};
           nomesColunasFinais.forEach((nome, index) => {
             if (nome && nome.trim() !== '') {
               objeto[nome] = linha[index] !== undefined ? linha[index] : null;
             }
           });
-          
+
           // Só adiciona se o objeto tiver pelo menos um valor não nulo
-          if (Object.values(objeto).some(v => v !== null && v !== undefined && String(v).trim() !== '')) {
+          if (
+            Object.values(objeto).some(
+              (v) => v !== null && v !== undefined && String(v).trim() !== '',
+            )
+          ) {
             dados.push(objeto);
           }
         }
       }
-      
+
       // Remove a primeira linha APENAS se ela for EXATAMENTE o cabeçalho (verificação de segurança)
       // Verifica se TODOS os valores da primeira linha correspondem aos cabeçalhos esperados
       if (dados && dados.length > 0 && !Array.isArray(dados[0])) {
         const primeiraLinha = dados[0];
-        const valoresPrimeiraLinha = Object.values(primeiraLinha).map(v => String(v || '').trim().toLowerCase());
-        const cabecalhosEsperadosLower = cabecalhosEsperados.map(c => c.trim().toLowerCase());
-        
+        const valoresPrimeiraLinha = Object.values(primeiraLinha).map((v) =>
+          String(v || '')
+            .trim()
+            .toLowerCase(),
+        );
+        const cabecalhosEsperadosLower = cabecalhosEsperados.map((c) =>
+          c.trim().toLowerCase(),
+        );
+
         // Verifica se TODOS os valores não vazios da primeira linha correspondem a cabeçalhos
         // Isso evita remover linhas de dados que possam conter palavras dos cabeçalhos
-        const valoresNaoVazios = valoresPrimeiraLinha.filter(v => v !== '');
+        const valoresNaoVazios = valoresPrimeiraLinha.filter((v) => v !== '');
         if (valoresNaoVazios.length > 0) {
-          const todosSaoCabecalhos = valoresNaoVazios.every(valor => 
-            cabecalhosEsperadosLower.some(cab => valor === cab || valor.includes(cab))
+          const todosSaoCabecalhos = valoresNaoVazios.every((valor) =>
+            cabecalhosEsperadosLower.some(
+              (cab) => valor === cab || valor.includes(cab),
+            ),
           );
-          
+
           // Só remove se TODOS os valores forem cabeçalhos E houver pelo menos 3 correspondências
           if (todosSaoCabecalhos && valoresNaoVazios.length >= 3) {
             console.log('⚠️ Primeira linha era cabeçalho, removendo...');
@@ -305,26 +361,46 @@ export class AgendamentosController {
           }
         }
       }
-      
-      console.log(`Total de linhas lidas da planilha: ${dados ? dados.length : 0}`);
+
+      console.log(
+        `Total de linhas lidas da planilha: ${dados ? dados.length : 0}`,
+      );
       if (dados && dados.length > 0) {
         const cabecalhos = Object.keys(dados[0]);
         console.log('Cabeçalhos encontrados:', cabecalhos);
         console.log('Total de cabeçalhos:', cabecalhos.length);
-        
+
         // Verifica se encontrou os cabeçalhos esperados
-        const cabecalhosEsperados = ['Nro. Processo', 'Nro.Protocolo', 'CPF', 'Requerente', 'Tipo Agendamento', 'Local de Atendimento', 'Técnico', 'RF', 'E-mail', 'Agendado para'];
-        const encontrados = cabecalhosEsperados.filter(cab => 
-          cabecalhos.some(c => c.toLowerCase().includes(cab.toLowerCase().substring(0, 5)))
+        const cabecalhosEsperados = [
+          'Nro. Processo',
+          'Nro.Protocolo',
+          'CPF',
+          'Requerente',
+          'Tipo Agendamento',
+          'Local de Atendimento',
+          'Técnico',
+          'RF',
+          'E-mail',
+          'Agendado para',
+        ];
+        const encontrados = cabecalhosEsperados.filter((cab) =>
+          cabecalhos.some((c) =>
+            c.toLowerCase().includes(cab.toLowerCase().substring(0, 5)),
+          ),
         );
         console.log('Cabeçalhos esperados encontrados:', encontrados);
-        
+
         // Mostra as primeiras 3 linhas para debug
         for (let i = 0; i < Math.min(3, dados.length); i++) {
-          console.log(`Linha ${i + 1} de dados (amostra):`, JSON.stringify(dados[i], null, 2));
+          console.log(
+            `Linha ${i + 1} de dados (amostra):`,
+            JSON.stringify(dados[i], null, 2),
+          );
         }
       } else {
-        console.log('Nenhum dado encontrado na planilha após todas as tentativas');
+        console.log(
+          'Nenhum dado encontrado na planilha após todas as tentativas',
+        );
       }
 
       if (!dados || dados.length === 0) {

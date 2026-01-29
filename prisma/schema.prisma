@@ -8,62 +8,60 @@ datasource db {
 }
 
 model Usuario {
-  id              String          @id @default(uuid())
+  id              String    @id @default(uuid())
   nome            String
-  login           String          @unique
-  email           String          @unique
-  permissao       Permissao       @default(USR)
-  status          Boolean         @default(true)
-  avatar          String?         @db.Text
-  ultimoLogin     DateTime        @default(now())
-  criadoEm        DateTime        @default(now())
-  atualizadoEm    DateTime        @default(now()) @updatedAt
+  login           String    @unique
+  email           String    @unique
+  senha           String?   @db.VarChar(255)
+  permissao       Permissao @default(PORTARIA)
+  status          Boolean   @default(true)
+  avatar          String?   @db.Text
+  ultimoLogin     DateTime  @default(now())
+  criadoEm        DateTime  @default(now())
+  atualizadoEm    DateTime  @default(now()) @updatedAt
   nomeSocial      String?
   coordenadoriaId String?
 
-  agendamentos    Agendamento[]
-  coordenadoria   Coordenadoria?  @relation(fields: [coordenadoriaId], references: [id], onDelete: SetNull)
+  agendamentos  Agendamento[]
+  coordenadoria Coordenadoria? @relation(fields: [coordenadoriaId], references: [id], onDelete: SetNull)
 
   @@map("usuarios")
 }
 
 model Agendamento {
-  id                      String            @id @default(uuid())
-  municipe                String?
-  rg                      String?
-  cpf                     String?
-  processo                String?
-  dataHora                DateTime
-  dataFim                 DateTime?
-  duracao                 Int?              @default(60)
-  importado               Boolean           @default(false)
-  legado                  Boolean           @default(false)
-  resumo                  String?           @db.Text
-  tipoAgendamentoId       String?
-  motivoNaoAtendimentoId  String?
-  coordenadoriaId         String?
-  tecnicoId               String?
-  tecnicoRF               String?
-  email                   String?
-  status                  StatusAgendamento @default(AGENDADO)
+  id                     String            @id @default(uuid())
+  municipe               String?
+  cpf                    String?
+  processo               String?
+  dataHora               DateTime
+  dataFim                DateTime?
+  importado              Boolean           @default(false)
+  resumo                 String?           @db.Text
+  tipoAgendamentoId      String?
+  motivoNaoAtendimentoId String?
+  coordenadoriaId        String?
+  tecnicoId              String?
+  tecnicoRF              String?
+  email                  String?
+  status                 StatusAgendamento @default(SOLICITADO)
 
-  criadoEm                DateTime          @default(now())
-  atualizadoEm            DateTime          @default(now()) @updatedAt
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @default(now()) @updatedAt
 
-  tipoAgendamento         TipoAgendamento?  @relation(fields: [tipoAgendamentoId], references: [id], onDelete: NoAction)
-  motivoNaoAtendimento    Motivo?           @relation(fields: [motivoNaoAtendimentoId], references: [id], onDelete: NoAction)
-  coordenadoria           Coordenadoria?    @relation(fields: [coordenadoriaId], references: [id], onDelete: NoAction)
-  tecnico                 Usuario?          @relation(fields: [tecnicoId], references: [id], onDelete: NoAction)
+  tipoAgendamento      TipoAgendamento? @relation(fields: [tipoAgendamentoId], references: [id], onDelete: NoAction)
+  motivoNaoAtendimento Motivo?          @relation(fields: [motivoNaoAtendimentoId], references: [id], onDelete: NoAction)
+  coordenadoria        Coordenadoria?   @relation(fields: [coordenadoriaId], references: [id], onDelete: NoAction)
+  tecnico              Usuario?         @relation(fields: [tecnicoId], references: [id], onDelete: NoAction)
 
   @@map("agendamentos")
 }
 
 model TipoAgendamento {
-  id           String        @id @default(uuid())
-  texto        String        @unique
-  status       Boolean       @default(true)
-  criadoEm     DateTime      @default(now())
-  atualizadoEm DateTime      @default(now()) @updatedAt
+  id           String   @id @default(uuid())
+  texto        String   @unique
+  status       Boolean  @default(true)
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @default(now()) @updatedAt
 
   agendamentos Agendamento[]
 
@@ -71,11 +69,11 @@ model TipoAgendamento {
 }
 
 model Motivo {
-  id           String        @id @default(uuid())
-  texto        String        @unique
-  status       Boolean       @default(true)
-  criadoEm     DateTime      @default(now())
-  atualizadoEm DateTime      @default(now()) @updatedAt
+  id           String   @id @default(uuid())
+  texto        String   @unique
+  status       Boolean  @default(true)
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @default(now()) @updatedAt
 
   agendamentos Agendamento[]
 
@@ -83,12 +81,12 @@ model Motivo {
 }
 
 model Coordenadoria {
-  id           String        @id @default(uuid())
-  sigla        String        @unique
+  id           String   @id @default(uuid())
+  sigla        String   @unique
   nome         String?
-  status       Boolean       @default(true)
-  criadoEm     DateTime      @default(now())
-  atualizadoEm DateTime      @default(now()) @updatedAt
+  status       Boolean  @default(true)
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @default(now()) @updatedAt
 
   agendamentos Agendamento[]
   usuarios     Usuario[]
@@ -102,10 +100,12 @@ enum Permissao {
   TEC
   USR
   PONTO_FOCAL
+  COORDENADOR
   PORTARIA
 }
 
 enum StatusAgendamento {
+  SOLICITADO
   AGENDADO
   CANCELADO
   CONCLUIDO
