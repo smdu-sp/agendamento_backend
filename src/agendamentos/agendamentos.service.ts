@@ -14,6 +14,12 @@ import {
   AgendamentoPaginadoResponseDTO,
   AgendamentoResponseDTO,
 } from './dto/agendamento-response.dto';
+import {
+  DashboardResponseDTO,
+  DashboardPorMesDTO,
+  DashboardPorAnoDTO,
+  DashboardMotivoNaoRealizacaoDTO,
+} from './dto/dashboard-response.dto';
 import { UsuariosService } from 'src/usuarios/usuarios.service';
 import { CoordenadoriasService } from 'src/coordenadorias/coordenadorias.service';
 
@@ -1301,5 +1307,125 @@ export class AgendamentosService {
     console.log(`   Total processado: ${importados + erros + linhasPuladas}`);
 
     return { importados, erros };
+  }
+
+  /**
+   * Dashboard: totais por mês, por ano, realizados, não realizados e motivos.
+   * PF/COORD: apenas sua coordenadoria; ADM/DEV: todos ou filtro por coordenadoriaId.
+   */
+  async getDashboard(
+    ano?: number,
+    coordenadoriaId?: string,
+    usuarioLogado?: Usuario,
+  ): Promise<DashboardResponseDTO> {
+    const anoFiltro = ano ?? new Date().getFullYear();
+    let filtroCoordenadoria: string | undefined;
+
+    if (usuarioLogado) {
+      if (
+        usuarioLogado.permissao === 'PONTO_FOCAL' ||
+        usuarioLogado.permissao === 'COORDENADOR'
+      ) {
+        filtroCoordenadoria = usuarioLogado.coordenadoriaId ?? undefined;
+      } else if (coordenadoriaId) {
+        filtroCoordenadoria = coordenadoriaId;
+      }
+    } else if (coordenadoriaId) {
+      filtroCoordenadoria = coordenadoriaId;
+    }
+
+    const inicioAno = new Date(anoFiltro, 0, 1, 0, 0, 0, 0);
+    const fimAno = new Date(anoFiltro, 11, 31, 23, 59, 59, 999);
+    const anoMin = new Date().getFullYear() - 5;
+
+    const whereBase = {
+      dataHora: { gte: inicioAno, lte: fimAno },
+      ...(filtroCoordenadoria && { coordenadoriaId: filtroCoordenadoria }),
+    };
+
+    const [
+      totalGeral,
+      realizados,
+      naoRealizados,
+      registrosPorMes,
+      registrosPorAno,
+      registrosMotivos,
+    ] = await Promise.all([
+      this.prisma.agendamento.count({ where: whereBase }),
+      this.prisma.agendamento.count({
+        where: { ...whereBase, status: 'ATENDIDO' },
+      }),
+      this.prisma.agendamento.count({
+        where: { ...whereBase, status: 'NAO_REALIZADO' },
+      }),
+      this.prisma.agendamento.findMany({
+        where: whereBase,
+        select: { dataHora: true },
+      }),
+      this.prisma.agendamento.findMany({
+        where: {
+          dataHora: {
+            gte: new Date(anoMin, 0, 1),
+            lte: new Date(),
+          },
+          ...(filtroCoordenadoria && {
+            coordenadoriaId: filtroCoordenadoria,
+          }),
+        },
+        select: { dataHora: true },
+      }),
+      this.prisma.agendamento.findMany({
+        where: { ...whereBase, status: 'NAO_REALIZADO' },
+        select: {
+          motivoNaoAtendimentoId: true,
+          motivoNaoAtendimento: {
+            select: { id: true, texto: true },
+          },
+        },
+      }),
+    ]);
+
+    const porMesMap = new Map<number, number>();
+    for (let m = 1; m <= 12; m++) porMesMap.set(m, 0);
+    for (const r of registrosPorMes) {
+      const mes = new Date(r.dataHora).getMonth() + 1;
+      porMesMap.set(mes, (porMesMap.get(mes) ?? 0) + 1);
+    }
+    const porMes: DashboardPorMesDTO[] = Array.from(porMesMap.entries()).map(
+      ([mes, total]) => ({ mes, ano: anoFiltro, total }),
+    );
+
+    const porAnoMap = new Map<number, number>();
+    for (const r of registrosPorAno) {
+      const y = new Date(r.dataHora).getFullYear();
+      if (y >= anoMin) porAnoMap.set(y, (porAnoMap.get(y) ?? 0) + 1);
+    }
+    const porAno: DashboardPorAnoDTO[] = Array.from(porAnoMap.entries())
+      .map(([ano, total]) => ({ ano, total }))
+      .sort((a, b) => a.ano - b.ano);
+
+    const motivosMap = new Map<string, { texto: string; total: number }>();
+    for (const r of registrosMotivos) {
+      const id = r.motivoNaoAtendimentoId ?? 'sem_motivo';
+      const texto = r.motivoNaoAtendimento?.texto ?? 'Não informado';
+      if (!motivosMap.has(id)) motivosMap.set(id, { texto, total: 0 });
+      motivosMap.get(id)!.total += 1;
+    }
+    const motivosNaoRealizacao: DashboardMotivoNaoRealizacaoDTO[] = Array.from(
+      motivosMap.entries(),
+    ).map(([motivoId, v]) => ({
+      motivoId: motivoId === 'sem_motivo' ? null : motivoId,
+      motivoTexto: v.texto,
+      total: v.total,
+    }));
+
+    return {
+      totalGeral,
+      realizados,
+      naoRealizados,
+      porMes,
+      porAno,
+      motivosNaoRealizacao,
+    };
   }
 }

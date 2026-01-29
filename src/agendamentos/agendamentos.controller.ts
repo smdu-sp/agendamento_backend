@@ -25,6 +25,7 @@ import {
   AgendamentoPaginadoResponseDTO,
   AgendamentoResponseDTO,
 } from './dto/agendamento-response.dto';
+import { DashboardResponseDTO } from './dto/dashboard-response.dto';
 import * as XLSX from 'xlsx';
 
 @ApiTags('Agendamentos')
@@ -63,6 +64,20 @@ export class AgendamentosController {
       dataFim,
       coordenadoriaId,
       tecnicoId,
+      usuario,
+    );
+  }
+
+  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
+  @Get('dashboard')
+  getDashboard(
+    @Query('ano') ano?: string,
+    @Query('coordenadoriaId') coordenadoriaId?: string,
+    @UsuarioAtual() usuario?: Usuario,
+  ): Promise<DashboardResponseDTO> {
+    return this.agendamentosService.getDashboard(
+      ano ? +ano : undefined,
+      coordenadoriaId,
       usuario,
     );
   }
