@@ -1347,13 +1347,23 @@ export class AgendamentosService {
       totalGeral,
       realizados,
       naoRealizados,
+      apenasNaoRealizado,
       registrosPorMes,
       registrosPorAno,
       registrosMotivos,
     ] = await Promise.all([
       this.prisma.agendamento.count({ where: whereBase }),
       this.prisma.agendamento.count({
-        where: { ...whereBase, status: 'ATENDIDO' },
+        where: {
+          ...whereBase,
+          status: { in: ['ATENDIDO', 'CONCLUIDO'] },
+        },
+      }),
+      this.prisma.agendamento.count({
+        where: {
+          ...whereBase,
+          status: { in: ['NAO_REALIZADO', 'CANCELADO'] },
+        },
       }),
       this.prisma.agendamento.count({
         where: { ...whereBase, status: 'NAO_REALIZADO' },
@@ -1387,10 +1397,16 @@ export class AgendamentosService {
 
     const porMesMap = new Map<number, number>();
     for (let m = 1; m <= 12; m++) porMesMap.set(m, 0);
+    const datasUnicas = new Set<string>();
     for (const r of registrosPorMes) {
-      const mes = new Date(r.dataHora).getMonth() + 1;
-      porMesMap.set(mes, (porMesMap.get(mes) ?? 0) + 1);
+      const d = new Date(r.dataHora);
+      porMesMap.set(
+        d.getMonth() + 1,
+        (porMesMap.get(d.getMonth() + 1) ?? 0) + 1,
+      );
+      datasUnicas.add(`${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`);
     }
+    const diasComAgendamentos = datasUnicas.size;
     const porMes: DashboardPorMesDTO[] = Array.from(porMesMap.entries()).map(
       ([mes, total]) => ({ mes, ano: anoFiltro, total }),
     );
@@ -1423,6 +1439,8 @@ export class AgendamentosService {
       totalGeral,
       realizados,
       naoRealizados,
+      apenasNaoRealizado,
+      diasComAgendamentos,
       porMes,
       porAno,
       motivosNaoRealizacao,
