@@ -5,6 +5,7 @@ COPY package.json package-lock.json* ./
 RUN if [ -f package-lock.json ]; then npm ci; else npm i; fi
 COPY prisma ./prisma
 RUN npx prisma generate
+RUN npx prisma generate --schema=prisma/sgu/schema.prisma
 COPY tsconfig*.json ./
 COPY nest-cli.json ./
 COPY src ./src
