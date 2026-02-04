@@ -221,6 +221,22 @@ export class AgendamentosService {
       ? new Date(restDto.dataFim)
       : this.calcularDataFim(dataHora, 60);
 
+    // Impede duplicata: mesmo processo + mesma data/hora
+    const processoTrim = restDto.processo?.trim();
+    if (processoTrim) {
+      const existente = await this.prisma.agendamento.findFirst({
+        where: {
+          processo: processoTrim,
+          dataHora,
+        },
+      });
+      if (existente) {
+        throw new BadRequestException(
+          'Já existe um agendamento com este processo e data/hora.',
+        );
+      }
+    }
+
     const agendamento: Agendamento = await this.prisma.agendamento.create({
       data: {
         ...restDto,
@@ -611,9 +627,10 @@ export class AgendamentosService {
   async importarPlanilha(
     dadosPlanilha: any[],
     coordenadoriaId?: string,
-  ): Promise<{ importados: number; erros: number }> {
+  ): Promise<{ importados: number; erros: number; duplicados: number }> {
     let importados = 0;
     let erros = 0;
+    let duplicados = 0;
     let linhasPuladas = 0; // Contador de linhas puladas sem erro
 
     console.log(`📊 Total de linhas na planilha: ${dadosPlanilha.length}`);
@@ -628,15 +645,18 @@ export class AgendamentosService {
       console.log('Cabeçalhos encontrados na primeira linha:', cabecalhos);
       console.log('Total de cabeçalhos:', cabecalhos.length);
 
-      // Verifica se os cabeçalhos esperados estão presentes
+      // Verifica se os cabeçalhos esperados estão presentes (linha 9: A, C, D, H, I, J, K, L, M, N, Q)
       const cabecalhosEsperados = [
         'Nro. Processo',
+        'Nro. Protocolo',
         'CPF',
         'Requerente',
+        'E-mail Munícipe',
         'Tipo Agendamento',
         'Local de Atendimento',
+        'RF Técnico',
         'Técnico',
-        'RF',
+        'E-mail Técnico',
         'Agendado para',
       ];
       const cabecalhosEncontrados = cabecalhosEsperados.filter((cab) =>
@@ -732,7 +752,8 @@ export class AgendamentosService {
         };
 
         // Mapeia os dados da planilha conforme estrutura (linha 9 é cabeçalho):
-        // Cabeçalhos reais: Nro. Processo, Nro. Protocolo, CPF, Requerente, Tipo Agendamento, Local de Atendimento, Técnico, RF, E-mail, Agendado para
+        // A=Nro. Processo, C=Nro. Protocolo, D=CPF, H=Requerente, I=E-mail Munícipe, J=Tipo Agendamento,
+        // K=Local de Atendimento, L=RF Técnico, M=Técnico, N=E-mail Técnico, Q=Agendado para
 
         // Verifica se os dados vieram com __EMPTY (cabeçalhos não encontrados)
         const temCabeçalhosVazios = Object.keys(linha).some((k) =>
@@ -750,30 +771,19 @@ export class AgendamentosService {
           dataHora;
 
         if (temCabeçalhosVazios) {
-          // Mapeia pelos índices baseado na ordem correta dos cabeçalhos (linha 9):
-          // B = Nro. Processo, D = Nro. Protocolo, E = CPF, H = Requerente, I = Tipo de Agendamento,
-          // J = Local de Atendimento, K = Técnico, L = RF, M = E-mail, N = Agendado para
-          // Mapeamento direto pelas letras das colunas:
-          // A=__EMPTY, B=__EMPTY_1, C=__EMPTY_2 (vazia), D=__EMPTY_3, E=__EMPTY_4, F=__EMPTY_5 (vazia), G=__EMPTY_6 (vazia),
-          // H=__EMPTY_7, I=__EMPTY_8, J=__EMPTY_9, K=__EMPTY_10, L=__EMPTY_11, M=__EMPTY_12, N=__EMPTY_13
-          // Nota: A chave "SMUL..." pode aparecer nos dados mas não é uma coluna, apenas texto do cabeçalho do relatório
-
-          processo = linha['__EMPTY_1'] || null; // Coluna B
-          // __EMPTY_3 = Nro. Protocolo (D - não mapeamos)
-          cpf = linha['__EMPTY_4'] || null; // Coluna E
-          municipe = linha['__EMPTY_7'] || null; // Coluna H
-          tipoAgendamento = linha['__EMPTY_8'] || null; // Coluna I
-          coordenadoriaSigla = linha['__EMPTY_9'] || null; // Coluna J
-          tecnicoNome = linha['__EMPTY_10'] || null; // Coluna K
-
-          // RF está SEMPRE na coluna L (__EMPTY_11)
-          tecnicoRF = linha['__EMPTY_11'] || null;
-
-          // E-mail está na coluna M (__EMPTY_12)
-          email = linha['__EMPTY_12'] || null;
-
-          // Agendado para (Data/Hora) está na coluna N (__EMPTY_13)
-          dataHora = linha['__EMPTY_13'] || null;
+          // Mapeamento por índice: A=__EMPTY, B=__EMPTY_1, C=__EMPTY_2, D=__EMPTY_3, ... Q=__EMPTY_16
+          processo = linha['__EMPTY'] || null; // Coluna A - Nro. Processo
+          // __EMPTY_2 = Nro. Protocolo (C - não mapeamos)
+          cpf = linha['__EMPTY_3'] || null; // Coluna D - CPF
+          municipe = linha['__EMPTY_7'] || null; // Coluna H - Requerente
+          email = linha['__EMPTY_8'] || null; // Coluna I - E-mail Munícipe
+          tipoAgendamento = linha['__EMPTY_9'] || null; // Coluna J - Tipo Agendamento
+          coordenadoriaSigla = linha['__EMPTY_10'] || null; // Coluna K - Local de Atendimento
+          tecnicoRF = linha['__EMPTY_11'] || null; // Coluna L - RF Técnico
+          tecnicoNome = linha['__EMPTY_12'] || null; // Coluna M - Técnico
+          // __EMPTY_13 = E-mail Técnico (N - não mapeamos para agendamento)
+          // Agendado para (Data/Hora) está na coluna Q (__EMPTY_16)
+          dataHora = linha['__EMPTY_16'] || null;
 
           // Validação: RF não deve ser uma data ou coordenadoria
           if (tecnicoRF) {
@@ -797,7 +807,7 @@ export class AgendamentosService {
             }
           }
         } else {
-          // Tenta buscar pelos nomes exatos primeiro, depois por palavras-chave
+          // Tenta buscar pelos nomes exatos primeiro, depois por palavras-chave (cabeçalhos na linha 9)
           processo =
             buscarValor(
               linha,
@@ -810,17 +820,9 @@ export class AgendamentosService {
               'PROCESSO',
             ) || buscarPorPalavraChave(linha, ['processo', 'nro', 'número']);
 
-          // CPF: pode vir como uma única coluna ou em múltiplas colunas (E, F, G)
           cpf =
             buscarValor(linha, 'CPF', 'cpf', 'Cpf') ||
             buscarPorPalavraChave(linha, ['cpf']);
-          if (!cpf) {
-            // Se não encontrou como coluna única, tenta concatenar E, F, G
-            const cpfE = buscarValor(linha, '__EMPTY_4', 'E', 'e') || '';
-            const cpfF = buscarValor(linha, '__EMPTY_5', 'F', 'f') || '';
-            const cpfG = buscarValor(linha, '__EMPTY_6', 'G', 'g') || '';
-            cpf = `${cpfE}${cpfF}${cpfG}`.trim() || null;
-          }
 
           municipe =
             buscarValor(linha, 'Requerente', 'requerente', 'REQUERENTE') ||
@@ -829,6 +831,20 @@ export class AgendamentosService {
               'munícipe',
               'municipe',
             ]);
+
+          // E-mail do munícipe (coluna I)
+          email =
+            buscarValor(
+              linha,
+              'E-mail Munícipe',
+              'E-mail munícipe',
+              'e-mail munícipe',
+              'E-mail',
+              'E-Mail',
+              'email',
+              'Email',
+              'EMAIL',
+            ) || buscarPorPalavraChave(linha, ['email', 'e-mail', 'munícipe']);
 
           tipoAgendamento =
             buscarValor(
@@ -857,6 +873,20 @@ export class AgendamentosService {
               'atendimento',
             ]);
 
+          // RF Técnico (coluna L)
+          tecnicoRF =
+            buscarValor(
+              linha,
+              'RF Técnico',
+              'RF técnico',
+              'rf técnico',
+              'RF',
+              'rf',
+              'Rf',
+              'RF do técnico',
+              'rf do técnico',
+            ) || buscarPorPalavraChave(linha, ['rf', 'técnico']);
+
           tecnicoNome =
             buscarValor(
               linha,
@@ -867,29 +897,7 @@ export class AgendamentosService {
               'nome do técnico',
             ) || buscarPorPalavraChave(linha, ['técnico', 'tecnico', 'nome']);
 
-          tecnicoRF =
-            buscarValor(
-              linha,
-              'RF',
-              'rf',
-              'Rf',
-              'RF do técnico',
-              'rf do técnico',
-            ) || buscarPorPalavraChave(linha, ['rf']);
-
-          // Email: campo "E-mail" ou "Email"
-          email =
-            buscarValor(
-              linha,
-              'E-mail',
-              'E-mail',
-              'E-Mail',
-              'email',
-              'Email',
-              'EMAIL',
-            ) || buscarPorPalavraChave(linha, ['email', 'e-mail']);
-
-          // Data e Hora: campo "Agendado para" (pode vir completo ou separado)
+          // Data e Hora: campo "Agendado para" (coluna Q)
           dataHora =
             buscarValor(
               linha,
@@ -1241,6 +1249,26 @@ export class AgendamentosService {
           continue;
         }
 
+        // Impede duplicata: mesmo processo + mesma data/hora
+        const processoTrim = processo ? String(processo).trim() : '';
+        if (processoTrim) {
+          const existente = await this.prisma.agendamento.findFirst({
+            where: {
+              processo: processoTrim,
+              dataHora: dataHoraObj,
+            },
+          });
+          if (existente) {
+            if (index < 5) {
+              console.log(
+                `Linha ${index + 1}: Duplicado (processo ${processoTrim} + data/hora já existente). Linha ignorada.`,
+              );
+            }
+            duplicados++;
+            continue;
+          }
+        }
+
         try {
           await this.prisma.agendamento.create({
             data: {
@@ -1303,10 +1331,13 @@ export class AgendamentosService {
     console.log(`   Total de linhas na planilha: ${dadosPlanilha.length}`);
     console.log(`   Linhas importadas com sucesso: ${importados}`);
     console.log(`   Linhas com erro: ${erros}`);
+    console.log(`   Linhas duplicadas (ignoradas): ${duplicados}`);
     console.log(`   Linhas puladas (vazias/inválidas): ${linhasPuladas}`);
-    console.log(`   Total processado: ${importados + erros + linhasPuladas}`);
+    console.log(
+      `   Total processado: ${importados + erros + duplicados + linhasPuladas}`,
+    );
 
-    return { importados, erros };
+    return { importados, erros, duplicados };
   }
 
   /**

@@ -148,7 +148,7 @@ export class AgendamentosController {
     )
     arquivo: Express.Multer.File,
     @Body() body: { coordenadoriaId?: string },
-  ): Promise<{ importados: number; erros: number }> {
+  ): Promise<{ importados: number; erros: number; duplicados: number }> {
     try {
       if (!arquivo) {
         throw new Error('Arquivo não fornecido');
@@ -168,10 +168,10 @@ export class AgendamentosController {
         throw new Error('Não foi possível ler a planilha');
       }
 
-      // Primeiro, verifica qual linha tem os cabeçalhos reais
-      // Lê algumas linhas para identificar onde estão os cabeçalhos
+      // Primeiro, verifica qual linha tem os cabeçalhos reais (estrutura: linha 9)
+      // A, C, D, H, I, J, K, L, M, N, Q
       const linhasTeste = XLSX.utils.sheet_to_json(worksheet, {
-        range: 'A1:N20', // Lê as primeiras 20 linhas
+        range: 'A1:Q20', // Lê as primeiras 20 linhas até coluna Q
         header: 1, // Retorna como array de arrays (não como objetos)
         defval: null,
       });
@@ -182,14 +182,15 @@ export class AgendamentosController {
       let linhaCabeçalho = 8; // Padrão: linha 9 (índice 8)
       const cabecalhosEsperados = [
         'Nro. Processo',
-        'Nro.Protocolo',
+        'Nro. Protocolo',
         'CPF',
         'Requerente',
+        'E-mail Munícipe',
         'Tipo Agendamento',
         'Local de Atendimento',
+        'RF Técnico',
         'Técnico',
-        'RF',
-        'E-mail',
+        'E-mail Técnico',
         'Agendado para',
       ];
 
@@ -419,7 +420,7 @@ export class AgendamentosController {
       }
 
       if (!dados || dados.length === 0) {
-        return { importados: 0, erros: 0 };
+        return { importados: 0, erros: 0, duplicados: 0 };
       }
 
       return this.agendamentosService.importarPlanilha(
