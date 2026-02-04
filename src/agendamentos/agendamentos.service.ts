@@ -352,12 +352,21 @@ export class AgendamentosService {
       },
     });
 
+    agendamentos.forEach((agendamento) => {
+      agendamento.cpf = this.mascararCPF(agendamento.cpf);
+    });
+
     return {
       total: +total,
       pagina: +pagina,
       limite: +limite,
       data: agendamentos as AgendamentoResponseDTO[],
     };
+  }
+  mascararCPF(cpf: string): string {
+    if (!cpf) return '';
+    const cpfCensurado = cpf.substring(0, 3) + '.***.***-' + cpf.substring(9, 11);
+    return cpfCensurado;
   }
 
   /**

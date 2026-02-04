@@ -6,7 +6,7 @@ import { JwtService } from '@nestjs/jwt';
 import { UsuarioToken } from './models/UsuarioToken';
 import { UsuarioJwt } from './models/UsuarioJwt';
 import { Client as LdapClient } from 'ldapts';
-import * as bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 
 @Injectable()
 export class AuthService {
@@ -57,7 +57,11 @@ export class AuthService {
 
     // Usuários com senha (ex: Portaria): apenas autenticação local
     if (usuario.senha) {
-      const ok = await bcrypt.compare(senha, usuario.senha);
+      const ok = await new Promise<boolean>((resolve, reject) =>
+        bcrypt.compare(senha, usuario.senha as string, (err, result) =>
+          err ? reject(err) : resolve(result),
+        ),
+      );
       if (!ok) throw new UnauthorizedException('Credenciais incorretas.');
       return usuario;
     }
