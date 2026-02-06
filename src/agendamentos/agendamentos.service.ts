@@ -68,10 +68,12 @@ export class AgendamentosService {
    * Busca ou cria técnico baseado no RF da planilha
    * @param rf - RF do técnico
    * @param coordenadoriaId - ID da coordenadoria (opcional, será atribuída ao técnico se fornecido)
+   * @param emailPlanilha - Email do técnico da planilha (opcional, usado na criação se LDAP falhar)
    */
   private async buscarOuCriarTecnicoPorRF(
     rf: string,
     coordenadoriaId?: string,
+    emailPlanilha?: string,
   ): Promise<string | null> {
     if (!rf) return null;
 
@@ -118,6 +120,10 @@ export class AgendamentosService {
 
       try {
         dadosLDAP = await this.usuariosService.buscarNovo(login);
+        // Se encontrou no LDAP mas tem email na planilha, usa o da planilha (mais atualizado)
+        if (dadosLDAP && emailPlanilha) {
+          dadosLDAP.email = emailPlanilha;
+        }
       } catch (error) {
         // Se não encontrou no LDAP, cria usuário básico com permissão TEC
         console.log(
@@ -126,13 +132,13 @@ export class AgendamentosService {
 
         // Cria nome baseado no login (ex: d854440 -> D854440)
         const nomeBasico = login.charAt(0).toUpperCase() + login.slice(1);
-        // Cria email básico (ex: d854440@smul.prefeitura.sp.gov.br)
-        const emailBasico = `${login}@smul.prefeitura.sp.gov.br`;
+        // Usa email da planilha se disponível, senão cria email básico
+        const emailFinal = emailPlanilha || `${login}@smul.prefeitura.sp.gov.br`;
 
         dadosLDAP = {
           login: login,
           nome: nomeBasico,
-          email: emailBasico,
+          email: emailFinal,
         };
       }
 
@@ -777,6 +783,7 @@ export class AgendamentosService {
           tecnicoNome,
           tecnicoRF,
           email,
+          emailTecnico,
           dataHora;
 
         if (temCabeçalhosVazios) {
@@ -790,9 +797,19 @@ export class AgendamentosService {
           coordenadoriaSigla = linha['__EMPTY_10'] || null; // Coluna K - Local de Atendimento
           tecnicoRF = linha['__EMPTY_11'] || null; // Coluna L - RF Técnico
           tecnicoNome = linha['__EMPTY_12'] || null; // Coluna M - Técnico
-          // __EMPTY_13 = E-mail Técnico (N - não mapeamos para agendamento)
+          emailTecnico = linha['__EMPTY_13'] || null; // Coluna N - E-mail Técnico
           // Agendado para (Data/Hora) está na coluna Q (__EMPTY_16)
           dataHora = linha['__EMPTY_16'] || null;
+
+          // Validação: Email do técnico deve conter @
+          if (emailTecnico) {
+            const emailTecStr = String(emailTecnico).trim();
+            if (!emailTecStr.includes('@') || !emailTecStr.includes('.')) {
+              emailTecnico = null;
+            } else {
+              emailTecnico = emailTecStr;
+            }
+          }
 
           // Validação: RF não deve ser uma data ou coordenadoria
           if (tecnicoRF) {
@@ -905,6 +922,29 @@ export class AgendamentosService {
               'Nome do técnico',
               'nome do técnico',
             ) || buscarPorPalavraChave(linha, ['técnico', 'tecnico', 'nome']);
+
+          // E-mail do técnico (coluna N)
+          emailTecnico =
+            buscarValor(
+              linha,
+              'E-mail Técnico',
+              'E-mail técnico',
+              'e-mail técnico',
+              'Email Técnico',
+              'email técnico',
+              'E-mail do Técnico',
+              'e-mail do técnico',
+            ) || null;
+          
+          // Validação: Email do técnico deve conter @
+          if (emailTecnico) {
+            const emailTecStr = String(emailTecnico).trim();
+            if (!emailTecStr.includes('@') || !emailTecStr.includes('.')) {
+              emailTecnico = null;
+            } else {
+              emailTecnico = emailTecStr;
+            }
+          }
 
           // Data e Hora: campo "Agendado para" (coluna Q)
           dataHora =
@@ -1235,17 +1275,19 @@ export class AgendamentosService {
             // Não atribui técnico - será atribuído manualmente pelo ponto focal
             tecnicoId = null;
           } else if (tecnicoRF) {
-            // Se tem RF, busca ou cria técnico normalmente com a coordenadoria da planilha
+            // Se tem RF, busca ou cria técnico normalmente com a coordenadoria e email da planilha
             tecnicoId = await this.buscarOuCriarTecnicoPorRF(
               String(tecnicoRF),
               coordenadoriaIdFinal || undefined,
+              emailTecnico || undefined,
             );
           }
         } else if (tecnicoRF) {
-          // Se não tem nome do técnico mas tem RF, busca ou cria técnico normalmente com a coordenadoria da planilha
+          // Se não tem nome do técnico mas tem RF, busca ou cria técnico normalmente com a coordenadoria e email da planilha
           tecnicoId = await this.buscarOuCriarTecnicoPorRF(
             String(tecnicoRF),
             coordenadoriaIdFinal || undefined,
+            emailTecnico || undefined,
           );
         }
 
