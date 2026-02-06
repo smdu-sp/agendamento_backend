@@ -22,7 +22,7 @@ async function main() {
         },
     });
     console.log(root);
-    const senhaPortaria = bcryptjs_1.default.hashSync('Portari@SB', 10);
+    const senhaPortaria = bcryptjs_1.hashSync('Portari@SB', 10);
     const portaria = await prisma.usuario.upsert({
         where: { login: 'Portaria' },
         create: {
