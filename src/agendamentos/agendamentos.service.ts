@@ -353,6 +353,7 @@ export class AgendamentosService {
             id: true,
             nome: true,
             login: true,
+            email: true,
           },
         },
       },
