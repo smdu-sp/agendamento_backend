@@ -18,6 +18,8 @@ import {
   DashboardResponseDTO,
   DashboardPorMesDTO,
   DashboardPorAnoDTO,
+  DashboardPorDiaDTO,
+  DashboardPorSemanaDTO,
   DashboardMotivoNaoRealizacaoDTO,
 } from './dto/dashboard-response.dto';
 import { UsuariosService } from 'src/usuarios/usuarios.service';
@@ -1393,11 +1395,16 @@ export class AgendamentosService {
   }
 
   /**
-   * Dashboard: totais por mês, por ano, realizados, não realizados e motivos.
+   * Dashboard: totais por semana, mês ou ano. KPIs no período; gráfico por dia (semana/mês) ou por mês (ano).
    * PF/COORD: apenas sua coordenadoria; ADM/DEV: todos ou filtro por coordenadoriaId.
    */
   async getDashboard(
+    tipoPeriodo: 'semana' | 'mes' | 'ano' = 'ano',
     ano?: number,
+    mes?: number,
+    semanaInicio?: string,
+    dataInicioQuery?: string,
+    dataFimQuery?: string,
     coordenadoriaId?: string,
     usuarioLogado?: Usuario,
   ): Promise<DashboardResponseDTO> {
@@ -1417,12 +1424,60 @@ export class AgendamentosService {
       filtroCoordenadoria = coordenadoriaId;
     }
 
-    const inicioAno = new Date(anoFiltro, 0, 1, 0, 0, 0, 0);
-    const fimAno = new Date(anoFiltro, 11, 31, 23, 59, 59, 999);
+    let dataInicio: Date;
+    let dataFim: Date;
+
+    if (dataInicioQuery?.trim() && dataFimQuery?.trim()) {
+      const dIni = new Date(dataInicioQuery.trim());
+      const dFim = new Date(dataFimQuery.trim());
+      if (!Number.isNaN(dIni.getTime()) && !Number.isNaN(dFim.getTime())) {
+        dataInicio = dIni;
+        dataFim = dFim;
+      } else {
+        dataInicio = new Date(anoFiltro, 0, 1, 0, 0, 0, 0);
+        dataFim = new Date(anoFiltro, 11, 31, 23, 59, 59, 999);
+      }
+    } else if (tipoPeriodo === 'semana') {
+      if (semanaInicio?.trim()) {
+        const parts = semanaInicio.trim().split('-').map(Number);
+        if (parts.length === 3 && parts[0] && parts[1] && parts[2]) {
+          dataInicio = new Date(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0);
+        } else {
+          const d = new Date();
+          const day = d.getDay();
+          const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+          dataInicio = new Date(d.getFullYear(), d.getMonth(), diff, 0, 0, 0, 0);
+        }
+      } else {
+        const d = new Date();
+        const day = d.getDay();
+        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+        dataInicio = new Date(d.getFullYear(), d.getMonth(), diff, 0, 0, 0, 0);
+      }
+      dataFim = new Date(dataInicio);
+      dataFim.setDate(dataFim.getDate() + 6);
+      dataFim.setHours(23, 59, 59, 999);
+    } else if (tipoPeriodo === 'mes' && mes != null && mes >= 1 && mes <= 12) {
+      dataInicio = new Date(anoFiltro, mes - 1, 1, 0, 0, 0, 0);
+      const ultimoDia = new Date(anoFiltro, mes, 0).getDate();
+      dataFim = new Date(
+        anoFiltro,
+        mes - 1,
+        ultimoDia,
+        23,
+        59,
+        59,
+        999,
+      );
+    } else {
+      dataInicio = new Date(anoFiltro, 0, 1, 0, 0, 0, 0);
+      dataFim = new Date(anoFiltro, 11, 31, 23, 59, 59, 999);
+    }
+
     const anoMin = new Date().getFullYear() - 5;
 
     const whereBase = {
-      dataHora: { gte: inicioAno, lte: fimAno },
+      dataHora: { gte: dataInicio, lte: dataFim },
       ...(filtroCoordenadoria && { coordenadoriaId: filtroCoordenadoria }),
     };
 
@@ -1478,21 +1533,106 @@ export class AgendamentosService {
       }),
     ]);
 
-    const porMesMap = new Map<number, number>();
-    for (let m = 1; m <= 12; m++) porMesMap.set(m, 0);
     const datasUnicas = new Set<string>();
     for (const r of registrosPorMes) {
       const d = new Date(r.dataHora);
-      porMesMap.set(
-        d.getMonth() + 1,
-        (porMesMap.get(d.getMonth() + 1) ?? 0) + 1,
-      );
       datasUnicas.add(`${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`);
     }
     const diasComAgendamentos = datasUnicas.size;
-    const porMes: DashboardPorMesDTO[] = Array.from(porMesMap.entries()).map(
-      ([mes, total]) => ({ mes, ano: anoFiltro, total }),
-    );
+
+    let porMes: DashboardPorMesDTO[] = [];
+    let porDia: DashboardPorDiaDTO[] | undefined;
+    let porSemana: DashboardPorSemanaDTO[] | undefined;
+
+    /** Retorna semana ISO (1-53) para uma data */
+    const getISOWeek = (date: Date): number => {
+      const d = new Date(date);
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() + 4 - (d.getDay() || 7));
+      const yearStart = new Date(d.getFullYear(), 0, 1);
+      return Math.ceil(
+        ((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7,
+      );
+    };
+
+    if (tipoPeriodo === 'ano') {
+      const porMesMap = new Map<number, number>();
+      for (let m = 1; m <= 12; m++) porMesMap.set(m, 0);
+      for (const r of registrosPorMes) {
+        const d = new Date(r.dataHora);
+        porMesMap.set(
+          d.getMonth() + 1,
+          (porMesMap.get(d.getMonth() + 1) ?? 0) + 1,
+        );
+      }
+      porMes = Array.from(porMesMap.entries()).map(([mes, total]) => ({
+        mes,
+        ano: anoFiltro,
+        total,
+      }));
+      const porSemanaMap = new Map<number, number>();
+      for (const r of registrosPorMes) {
+        const w = getISOWeek(new Date(r.dataHora));
+        porSemanaMap.set(w, (porSemanaMap.get(w) ?? 0) + 1);
+      }
+      porSemana = Array.from(porSemanaMap.entries())
+        .sort((a, b) => a[0] - b[0])
+        .map(([semana, total]) => ({
+          semana,
+          label: `S${semana}`,
+          total,
+        }));
+    } else if (tipoPeriodo === 'semana') {
+      const labelsDia = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+      const porDiaMap = new Map<number, number>();
+      for (let i = 1; i <= 7; i++) porDiaMap.set(i, 0);
+      for (const r of registrosPorMes) {
+        const d = new Date(r.dataHora);
+        const diaSemana = d.getDay();
+        const segAdom = diaSemana === 0 ? 7 : diaSemana;
+        porDiaMap.set(segAdom, (porDiaMap.get(segAdom) ?? 0) + 1);
+      }
+      porDia = Array.from(porDiaMap.entries())
+        .sort((a, b) => a[0] - b[0])
+        .map(([dia, total]) => ({
+          dia,
+          label: labelsDia[dia - 1],
+          total,
+        }));
+    } else if (tipoPeriodo === 'mes' && mes != null) {
+      const ultimoDia = new Date(anoFiltro, mes, 0).getDate();
+      const porDiaMap = new Map<number, number>();
+      for (let i = 1; i <= ultimoDia; i++) porDiaMap.set(i, 0);
+      for (const r of registrosPorMes) {
+        const d = new Date(r.dataHora);
+        const dia = d.getDate();
+        porDiaMap.set(dia, (porDiaMap.get(dia) ?? 0) + 1);
+      }
+      porDia = Array.from(porDiaMap.entries()).map(([dia, total]) => ({
+        dia,
+        label: String(dia),
+        total,
+      }));
+      const numSemanasNoMes = Math.ceil(ultimoDia / 7);
+      const porSemanaMap = new Map<number, number>();
+      for (let i = 1; i <= numSemanasNoMes; i++) porSemanaMap.set(i, 0);
+      for (const r of registrosPorMes) {
+        const d = new Date(r.dataHora);
+        const dia = d.getDate();
+        const semanaNoMes = Math.ceil(dia / 7);
+        porSemanaMap.set(
+          semanaNoMes,
+          (porSemanaMap.get(semanaNoMes) ?? 0) + 1,
+        );
+      }
+      porSemana = Array.from(porSemanaMap.entries())
+        .sort((a, b) => a[0] - b[0])
+        .map(([semana, total]) => ({
+          semana,
+          label: `Sem ${semana}`,
+          total,
+        }));
+    }
 
     const porAnoMap = new Map<number, number>();
     for (const r of registrosPorAno) {
@@ -1500,7 +1640,7 @@ export class AgendamentosService {
       if (y >= anoMin) porAnoMap.set(y, (porAnoMap.get(y) ?? 0) + 1);
     }
     const porAno: DashboardPorAnoDTO[] = Array.from(porAnoMap.entries())
-      .map(([ano, total]) => ({ ano, total }))
+      .map(([a, total]) => ({ ano: a, total }))
       .sort((a, b) => a.ano - b.ano);
 
     const motivosMap = new Map<string, { texto: string; total: number }>();
@@ -1526,6 +1666,8 @@ export class AgendamentosService {
       diasComAgendamentos,
       porMes,
       porAno,
+      ...(porDia != null && { porDia }),
+      ...(porSemana != null && { porSemana }),
       motivosNaoRealizacao,
     };
   }

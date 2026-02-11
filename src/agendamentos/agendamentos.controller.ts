@@ -71,12 +71,26 @@ export class AgendamentosController {
   @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
   @Get('dashboard')
   getDashboard(
+    @Query('tipoPeriodo') tipoPeriodo?: 'semana' | 'mes' | 'ano',
     @Query('ano') ano?: string,
+    @Query('mes') mes?: string,
+    @Query('semanaInicio') semanaInicio?: string,
+    @Query('dataInicio') dataInicio?: string,
+    @Query('dataFim') dataFim?: string,
     @Query('coordenadoriaId') coordenadoriaId?: string,
     @UsuarioAtual() usuario?: Usuario,
   ): Promise<DashboardResponseDTO> {
+    const periodo =
+      tipoPeriodo === 'semana' || tipoPeriodo === 'mes' || tipoPeriodo === 'ano'
+        ? tipoPeriodo
+        : 'ano';
     return this.agendamentosService.getDashboard(
+      periodo,
       ano ? +ano : undefined,
+      mes ? +mes : undefined,
+      semanaInicio,
+      dataInicio,
+      dataFim,
       coordenadoriaId,
       usuario,
     );
