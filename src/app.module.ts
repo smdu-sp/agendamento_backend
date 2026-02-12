@@ -9,6 +9,7 @@ import { MotivosModule } from './motivos/motivos.module';
 import { TiposAgendamentoModule } from './tipos-agendamento/tipos-agendamento.module';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
+import { ImpersonationGuard } from './auth/guards/impersonation.guard';
 import { RoleGuard } from './auth/guards/role.guard';
 
 @Global()
@@ -19,6 +20,10 @@ import { RoleGuard } from './auth/guards/role.guard';
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: ImpersonationGuard,
     },
     {
       provide: APP_GUARD,

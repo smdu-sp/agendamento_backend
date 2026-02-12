@@ -59,7 +59,7 @@ export class CoordenadoriasController {
     return this.coordenadoriasService.listaCompleta();
   }
 
-  @Permissoes('ADM')
+  @Permissoes('ADM', 'DEV')
   @Patch('atualizar/:id')
   atualizar(
     @Param('id') id: string,

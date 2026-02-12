@@ -17,6 +17,14 @@ export class CreateCoordenadoriaDto {
   @IsString({ message: 'Nome deve ser texto.' })
   nome?: string;
 
+  @ApiProperty({
+    description:
+      'E-mail da coordenadoria (usado no Outlook para envio do convite de reunião)',
+  })
+  @IsOptional()
+  @IsString({ message: 'E-mail deve ser texto.' })
+  email?: string;
+
   @ApiProperty({ description: 'Status da coordenadoria' })
   @IsBoolean({ message: 'Status inválido!' })
   @IsOptional()

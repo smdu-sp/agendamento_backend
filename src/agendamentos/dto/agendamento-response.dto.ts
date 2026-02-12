@@ -3,7 +3,12 @@ import { Agendamento } from '@prisma/client';
 export type AgendamentoResponseDTO = Agendamento & {
   tipoAgendamento?: { id: string; texto: string } | null;
   motivoNaoAtendimento?: { id: string; texto: string } | null;
-  coordenadoria?: { id: string; sigla: string; nome?: string | null } | null;
+  coordenadoria?: {
+    id: string;
+    sigla: string;
+    nome?: string | null;
+    email?: string | null;
+  } | null;
   tecnico?: { id: string; nome: string; login: string } | null;
 };
 

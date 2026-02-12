@@ -84,6 +84,7 @@ model Coordenadoria {
   id           String   @id @default(uuid())
   sigla        String   @unique
   nome         String?
+  email        String?  @db.VarChar(255)
   status       Boolean  @default(true)
   criadoEm     DateTime @default(now())
   atualizadoEm DateTime @default(now()) @updatedAt
