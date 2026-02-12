@@ -427,31 +427,29 @@ export class UsuariosService {
         `${process.env.USER_LDAP}${process.env.LDAP_DOMAIN}`,
         process.env.PASS_LDAP,
       );
-    } catch (error) {
-      throw new InternalServerErrorException(
-        'Não foi possível buscar o usuário.',
-      );
-    }
-    let nome: string, email: string, login: string;
-    try {
       const usuario = await client.search(
         process.env.LDAP_BASE_DN || process.env.LDAP_BASE,
         {
           filter: `(&(name=${nome_busca})(company=SMUL))`,
           scope: 'sub',
-          attributes: ['name', 'mail'],
+          attributes: ['name', 'mail', 'sAMAccountName'],
         },
       );
       const { name, mail, samaccountname } = usuario.searchEntries[0];
-      nome = name.toString();
-      email = mail.toString().toLowerCase();
-      login = samaccountname.toString().toLowerCase();
+      const nome = name.toString();
+      const email = mail.toString().toLowerCase();
+      const login = samaccountname.toString().toLowerCase();
       return { nome, email, login };
     } catch (error) {
-      await client.unbind();
       throw new InternalServerErrorException(
         'Não foi possível buscar o usuário.',
       );
+    } finally {
+      try {
+        await client.unbind();
+      } catch {
+        // Ignora erro ao fechar
+      }
     }
   }
 
@@ -477,20 +475,13 @@ export class UsuariosService {
       );
     }
 
+    let nome: string, email: string;
     try {
       await client.bind(
         `${process.env.USER_LDAP}${process.env.LDAP_DOMAIN}`,
         process.env.PASS_LDAP,
       );
-    } catch (error) {
-      console.error('Erro ao conectar no LDAP:', error);
-      throw new InternalServerErrorException(
-        'Não foi possível conectar ao servidor LDAP.',
-      );
-    }
 
-    let nome: string, email: string;
-    try {
       const usuario = await client.search(ldapBase, {
         filter: `(&(sAMAccountName=${login})(company=SMUL))`,
         scope: 'sub',
@@ -498,25 +489,17 @@ export class UsuariosService {
       });
 
       if (!usuario.searchEntries || usuario.searchEntries.length === 0) {
-        await client.unbind();
         throw new NotFoundException('Usuário não encontrado no LDAP.');
       }
 
       const { name, mail } = usuario.searchEntries[0];
       if (!name || !mail) {
-        await client.unbind();
         throw new NotFoundException('Dados do usuário incompletos no LDAP.');
       }
 
       nome = name.toString();
       email = mail.toString().toLowerCase();
-      await client.unbind();
     } catch (error) {
-      try {
-        await client.unbind();
-      } catch (unbindError) {
-        // Ignora erro de unbind se já foi feito
-      }
       if (error instanceof NotFoundException) {
         throw error;
       }
@@ -524,6 +507,12 @@ export class UsuariosService {
       throw new InternalServerErrorException(
         'Não foi possível buscar o usuário no LDAP.',
       );
+    } finally {
+      try {
+        await client.unbind();
+      } catch {
+        // Ignora erro ao fechar
+      }
     }
     if (!nome || !email) throw new NotFoundException('Usuário não encontrado.');
     return { login, nome, email };
