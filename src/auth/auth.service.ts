@@ -73,10 +73,16 @@ export class AuthService {
     const client = new LdapClient({ url: process.env.LDAP_SERVER });
     try {
       await client.bind(`${login}${process.env.LDAP_DOMAIN}`, senha);
-      await client.unbind();
       return usuario;
     } catch {
       throw new UnauthorizedException('Credenciais incorretas.');
+    } finally {
+      // Garante que o cliente LDAP seja fechado sempre
+      try {
+        await client.unbind();
+      } catch {
+        // Ignora erro ao fechar
+      }
     }
   }
 }
