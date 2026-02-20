@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ForbiddenException,
   Injectable,
   InternalServerErrorException,
@@ -8,7 +7,7 @@ import {
 import { CreateCoordenadoriaDto } from './dto/create-coordenadoria.dto';
 import { UpdateCoordenadoriaDto } from './dto/update-coordenadoria.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { Coordenadoria } from '@prisma/client';
+import { Coordenadoria, Usuario } from '@prisma/client';
 import { AppService } from 'src/app.service';
 import {
   CoordenadoriaPaginadoResponseDTO,
@@ -51,9 +50,17 @@ export class CoordenadoriasService {
     limite: number = 10,
     busca?: string,
     status?: string,
+    usuario?: Usuario,
   ): Promise<CoordenadoriaPaginadoResponseDTO> {
     [pagina, limite] = this.app.verificaPagina(pagina, limite);
+    const isPontoFocalOuCoordenador =
+      usuario?.permissao === 'PONTO_FOCAL' ||
+      usuario?.permissao === 'COORDENADOR';
     const searchParams = {
+      ...(isPontoFocalOuCoordenador &&
+        usuario?.coordenadoriaId && {
+          id: usuario.coordenadoriaId,
+        }),
       ...(busca && {
         OR: [
           { sigla: { contains: busca } },
@@ -86,7 +93,22 @@ export class CoordenadoriasService {
     };
   }
 
-  async buscarPorId(id: string): Promise<CoordenadoriaResponseDTO> {
+  async buscarPorId(
+    id: string,
+    usuario?: Usuario,
+  ): Promise<CoordenadoriaResponseDTO> {
+    const isPontoFocalOuCoordenador =
+      usuario?.permissao === 'PONTO_FOCAL' ||
+      usuario?.permissao === 'COORDENADOR';
+    if (
+      isPontoFocalOuCoordenador &&
+      usuario?.coordenadoriaId &&
+      usuario.coordenadoriaId !== id
+    ) {
+      throw new ForbiddenException(
+        'Você só pode acessar a coordenadoria à qual está vinculado.',
+      );
+    }
     const coordenadoria: Coordenadoria =
       await this.prisma.coordenadoria.findUnique({ where: { id } });
     if (!coordenadoria) throw new NotFoundException('Coordenadoria não encontrada.');
@@ -110,7 +132,20 @@ export class CoordenadoriasService {
   async atualizar(
     id: string,
     updateCoordenadoriaDto: UpdateCoordenadoriaDto,
+    usuario?: Usuario,
   ): Promise<CoordenadoriaResponseDTO> {
+    const isPontoFocalOuCoordenador =
+      usuario?.permissao === 'PONTO_FOCAL' ||
+      usuario?.permissao === 'COORDENADOR';
+    if (
+      isPontoFocalOuCoordenador &&
+      usuario?.coordenadoriaId &&
+      usuario.coordenadoriaId !== id
+    ) {
+      throw new ForbiddenException(
+        'Você só pode editar a coordenadoria à qual está vinculado.',
+      );
+    }
     if (updateCoordenadoriaDto.sigla) {
       const coordenadoria = await this.buscarPorSigla(
         updateCoordenadoriaDto.sigla,

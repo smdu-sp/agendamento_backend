@@ -12,7 +12,9 @@ import { CoordenadoriasService } from './coordenadorias.service';
 import { CreateCoordenadoriaDto } from './dto/create-coordenadoria.dto';
 import { UpdateCoordenadoriaDto } from './dto/update-coordenadoria.dto';
 import { Permissoes } from 'src/auth/decorators/permissoes.decorator';
+import { UsuarioAtual } from 'src/auth/decorators/usuario-atual.decorator';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Usuario } from '@prisma/client';
 import {
   CoordenadoriaPaginadoResponseDTO,
   CoordenadoriaResponseDTO,
@@ -32,26 +34,31 @@ export class CoordenadoriasController {
     return this.coordenadoriasService.criar(createCoordenadoriaDto);
   }
 
-  @Permissoes('ADM', 'DEV')
+  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
   @Get('buscar-tudo')
   buscarTudo(
     @Query('pagina') pagina?: string,
     @Query('limite') limite?: string,
     @Query('busca') busca?: string,
     @Query('status') status?: string,
+    @UsuarioAtual() usuario?: Usuario,
   ): Promise<CoordenadoriaPaginadoResponseDTO> {
     return this.coordenadoriasService.buscarTudo(
       +pagina,
       +limite,
       busca,
       status,
+      usuario,
     );
   }
 
-  @Permissoes('ADM', 'DEV')
+  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
   @Get('buscar-por-id/:id')
-  buscarPorId(@Param('id') id: string): Promise<CoordenadoriaResponseDTO> {
-    return this.coordenadoriasService.buscarPorId(id);
+  buscarPorId(
+    @Param('id') id: string,
+    @UsuarioAtual() usuario?: Usuario,
+  ): Promise<CoordenadoriaResponseDTO> {
+    return this.coordenadoriasService.buscarPorId(id, usuario);
   }
 
   @Get('lista-completa')
@@ -59,13 +66,18 @@ export class CoordenadoriasController {
     return this.coordenadoriasService.listaCompleta();
   }
 
-  @Permissoes('ADM', 'DEV')
+  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
   @Patch('atualizar/:id')
   atualizar(
     @Param('id') id: string,
     @Body() updateCoordenadoriaDto: UpdateCoordenadoriaDto,
+    @UsuarioAtual() usuario?: Usuario,
   ): Promise<CoordenadoriaResponseDTO> {
-    return this.coordenadoriasService.atualizar(id, updateCoordenadoriaDto);
+    return this.coordenadoriasService.atualizar(
+      id,
+      updateCoordenadoriaDto,
+      usuario,
+    );
   }
 
   @Permissoes('ADM', 'DEV')
