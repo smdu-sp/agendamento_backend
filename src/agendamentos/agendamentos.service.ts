@@ -1437,6 +1437,258 @@ export class AgendamentosService {
   }
 
   /**
+   * Importa agendamentos da planilha Outlook.
+   * Estrutura: A=Tipo Atendimento, B=Visitante (munícipe), C=CPF, D=Horário, E=Técnico Responsável (nome texto), F=Unidade, G=Número Processo.
+   * Linhas 1–3 (A1:G3) = título com "Data: DD/MM/AAAA". Linha 4 = cabeçalho, registros a partir da linha 5.
+   */
+  async importarPlanilhaOutlook(
+    dadosPlanilha: any[],
+    usuario?: Usuario,
+    dataPlanilhaStr?: string,
+  ): Promise<{ importados: number; erros: number; duplicados: number }> {
+    let importados = 0;
+    let erros = 0;
+    let duplicados = 0;
+    const HEADERS = [
+      'Tipo de Atendimento',
+      'Visitante',
+      'CPF',
+      'Horário',
+      'Técnico Responsável',
+      'Unidade',
+      'Número do Processo',
+    ] as const;
+
+    if (!dadosPlanilha || !Array.isArray(dadosPlanilha)) {
+      throw new Error('Dados da planilha Outlook inválidos');
+    }
+
+    for (let index = 0; index < dadosPlanilha.length; index++) {
+      const row = dadosPlanilha[index];
+      if (!row || typeof row !== 'object') {
+        erros++;
+        continue;
+      }
+
+      const get = (key: (typeof HEADERS)[number]): string | null => {
+        const v = row[key];
+        if (v === null || v === undefined) return null;
+        const s = String(v).trim();
+        return s === '' ? null : s;
+      };
+      const getRaw = (key: (typeof HEADERS)[number]): string | number | null => {
+        const v = row[key];
+        if (v === null || v === undefined) return null;
+        if (typeof v === 'number' && !Number.isNaN(v)) return v;
+        const s = String(v).trim();
+        return s === '' ? null : s;
+      };
+
+      const visitante = get('Visitante');
+      const horarioRaw = getRaw('Horário');
+      // Linha totalmente vazia: pula sem contar como erro
+      if (!visitante && (horarioRaw === null || horarioRaw === undefined)) {
+        continue;
+      }
+      // Pula linha de cabeçalho se vier no meio dos dados (ex.: "TIPO DE ATENDIMENTO", "VISITANTE")
+      const tipoStr = get('Tipo de Atendimento');
+      if (tipoStr && (tipoStr.toUpperCase() === 'TIPO DE ATENDIMENTO' || tipoStr === 'TIPO DE ATENDIMENTO')) {
+        continue;
+      }
+      if (!visitante || horarioRaw === null || horarioRaw === undefined) {
+        erros++;
+        continue;
+      }
+
+      try {
+        const tipoTexto = get('Tipo de Atendimento');
+        let tipoAgendamentoId: string | undefined;
+        if (tipoTexto) {
+          tipoAgendamentoId = await this.buscarOuCriarTipoPorTexto(tipoTexto);
+        }
+
+        const unidadeStr = get('Unidade');
+        let coordenadoriaId: string | undefined;
+        if (unidadeStr) {
+          const coordPorSigla = await this.coordenadoriasService.buscarPorSigla(unidadeStr);
+          if (coordPorSigla) {
+            coordenadoriaId = coordPorSigla.id;
+          } else {
+            const coordPorNome = await this.prisma.coordenadoria.findFirst({
+              where: {
+                OR: [
+                  { sigla: { contains: unidadeStr } },
+                  { nome: { contains: unidadeStr } },
+                ],
+                status: true,
+              },
+            });
+            if (coordPorNome) coordenadoriaId = coordPorNome.id;
+          }
+        }
+
+        const dataHora = this.parseDataHoraOutlook(horarioRaw, dataPlanilhaStr);
+        if (!dataHora) {
+          console.warn(
+            `[Outlook import] Linha ${index + 5}: horário inválido (valor: ${JSON.stringify(horarioRaw)}, dataPlanilha: ${dataPlanilhaStr ?? 'não informada'})`,
+          );
+          erros++;
+          continue;
+        }
+
+        const processo = get('Número do Processo');
+        const cpf = get('CPF');
+        const tecnicoResponsavelPlanilha = get('Técnico Responsável');
+
+        const duplicado = await this.prisma.agendamento.findFirst({
+          where: {
+            processo: processo || undefined,
+            dataHora,
+            coordenadoriaId: coordenadoriaId || undefined,
+            importadoOutlook: true,
+          },
+        });
+        if (duplicado) {
+          duplicados++;
+          continue;
+        }
+
+        const umaHoraDepois = new Date(dataHora.getTime() + 60 * 60 * 1000);
+        await this.prisma.agendamento.create({
+          data: {
+            municipe: visitante,
+            cpf: cpf || undefined,
+            processo: processo || undefined,
+            dataHora,
+            dataFim: umaHoraDepois,
+            importado: true,
+            importadoOutlook: true,
+            tecnicoResponsavelPlanilha: tecnicoResponsavelPlanilha || undefined,
+            tipoAgendamentoId: tipoAgendamentoId || undefined,
+            coordenadoriaId: coordenadoriaId || undefined,
+            tecnicoId: undefined,
+            status: 'SOLICITADO',
+          },
+        });
+        importados++;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error(`[Outlook import] Linha ${index + 5}: ${msg}`, e);
+        erros++;
+      }
+    }
+
+    await this.registrarImportacaoOutlook(importados, usuario?.id);
+    return { importados, erros, duplicados };
+  }
+
+  private parseDataHoraOutlook(val: string | number, dataPlanilhaStr?: string): Date | null {
+    // Excel serial time: fração do dia (0 = 00:00, 0.5 = 12:00, 0.54166... = 13:00)
+    const num = typeof val === 'number' ? val : Number(String(val).replace(',', '.'));
+    if (!Number.isNaN(num) && num >= 0 && num < 1) {
+      const totalSegundos = num * 24 * 3600;
+      const h = Math.floor(totalSegundos / 3600);
+      const min = Math.round((totalSegundos % 3600) / 60);
+      let dia: number, mes: number, ano: number;
+      if (dataPlanilhaStr) {
+        const parts = dataPlanilhaStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+        if (parts) {
+          dia = Number(parts[1]);
+          mes = Number(parts[2]) - 1;
+          ano = Number(parts[3]);
+        } else {
+          const hoje = new Date();
+          ano = hoje.getFullYear();
+          mes = hoje.getMonth();
+          dia = hoje.getDate();
+        }
+      } else {
+        const hoje = new Date();
+        ano = hoje.getFullYear();
+        mes = hoje.getMonth();
+        dia = hoje.getDate();
+      }
+      const d = new Date(ano, mes, dia, h, min);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+
+    const s = String(val).trim();
+    if (!s) return null;
+    const d = new Date(s);
+    if (!Number.isNaN(d.getTime())) return d;
+    const br = /^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})/.exec(s);
+    if (br) {
+      const [, dia, mes, ano, h, min] = br;
+      const d2 = new Date(Number(ano), Number(mes) - 1, Number(dia), Number(h), Number(min));
+      return Number.isNaN(d2.getTime()) ? null : d2;
+    }
+    const soHorario = /^(\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(s);
+    if (soHorario) {
+      const [, h, min] = soHorario;
+      let dia: number, mes: number, ano: number;
+      if (dataPlanilhaStr) {
+        const parts = dataPlanilhaStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+        if (parts) {
+          dia = Number(parts[1]);
+          mes = Number(parts[2]) - 1;
+          ano = Number(parts[3]);
+        } else {
+          const hoje = new Date();
+          ano = hoje.getFullYear();
+          mes = hoje.getMonth();
+          dia = hoje.getDate();
+        }
+      } else {
+        const hoje = new Date();
+        ano = hoje.getFullYear();
+        mes = hoje.getMonth();
+        dia = hoje.getDate();
+      }
+      const seg = Number(soHorario[3] ?? 0);
+      const d3 = new Date(ano, mes, dia, Number(h), Number(min), seg);
+      return Number.isNaN(d3.getTime()) ? null : d3;
+    }
+    return null;
+  }
+
+  async registrarImportacaoOutlook(total: number, usuarioId?: string): Promise<void> {
+    try {
+      await this.prisma.logImportacaoOutlook.create({
+        data: { total, usuarioId: usuarioId ?? undefined },
+      });
+    } catch (e: unknown) {
+      if (e && typeof e === 'object' && 'code' in e && (e as { code: string }).code === 'P2021') {
+        return;
+      }
+      throw e;
+    }
+  }
+
+  async getUltimaImportacaoOutlook(): Promise<{
+    dataHora: Date;
+    total: number;
+    usuarioNome?: string | null;
+  } | null> {
+    try {
+      const ultima = await this.prisma.logImportacaoOutlook.findFirst({
+        orderBy: { dataHora: 'desc' },
+        include: { usuario: { select: { nome: true } } },
+      });
+      if (!ultima) return null;
+      return {
+        dataHora: ultima.dataHora,
+        total: ultima.total,
+        usuarioNome: ultima.usuario?.nome ?? null,
+      };
+    } catch (e: unknown) {
+      if (e && typeof e === 'object' && 'code' in e && (e as { code: string }).code === 'P2021') {
+        return null;
+      }
+      throw e;
+    }
+  }
+
+  /**
    * Dashboard: totais por semana, mês ou ano. KPIs no período; gráfico por dia (semana/mês) ou por mês (ano).
    * PF/COORD: apenas sua coordenadoria; ADM/DEV: todos ou filtro por coordenadoriaId.
    */

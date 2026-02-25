@@ -25,26 +25,29 @@ model Usuario {
   agendamentos           Agendamento[]
   coordenadoria          Coordenadoria?          @relation(fields: [coordenadoriaId], references: [id], onDelete: SetNull)
   logImportacoesPlanilha LogImportacaoPlanilha[]
+  logImportacoesOutlook  LogImportacaoOutlook[]
 
   @@map("usuarios")
 }
 
 model Agendamento {
-  id                     String            @id @default(uuid())
-  municipe               String?
-  cpf                    String?
-  processo               String?
-  dataHora               DateTime
-  dataFim                DateTime?
-  importado              Boolean           @default(false)
-  resumo                 String?           @db.Text
-  tipoAgendamentoId      String?
-  motivoNaoAtendimentoId String?
-  coordenadoriaId        String?
-  tecnicoId              String?
-  tecnicoRF              String?
-  email                  String?
-  status                 StatusAgendamento @default(SOLICITADO)
+  id                        String            @id @default(uuid())
+  municipe                  String?
+  cpf                       String?
+  processo                  String?
+  dataHora                  DateTime
+  dataFim                   DateTime?
+  importado                 Boolean           @default(false)
+  importadoOutlook          Boolean           @default(false)
+  tecnicoResponsavelPlanilha String?          @db.VarChar(255)
+  resumo                    String?           @db.Text
+  tipoAgendamentoId         String?
+  motivoNaoAtendimentoId    String?
+  coordenadoriaId           String?
+  tecnicoId                 String?
+  tecnicoRF                 String?
+  email                     String?
+  status                    StatusAgendamento @default(SOLICITADO)
 
   criadoEm     DateTime @default(now())
   atualizadoEm DateTime @default(now()) @updatedAt
@@ -123,4 +126,14 @@ model LogImportacaoPlanilha {
   usuario   Usuario? @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
 
   @@map("log_importacao_planilha")
+}
+
+model LogImportacaoOutlook {
+  id        String   @id @default(uuid())
+  dataHora  DateTime @default(now())
+  total     Int      @default(0)
+  usuarioId String?
+  usuario   Usuario? @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+
+  @@map("log_importacao_outlook")
 }

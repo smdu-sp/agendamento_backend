@@ -148,6 +148,24 @@ export class AgendamentosController {
     );
   }
 
+  @Permissoes('ADM', 'DEV', 'TEC', 'PONTO_FOCAL', 'COORDENADOR', 'PORTARIA')
+  @Get('ultima-importacao-outlook')
+  getUltimaImportacaoOutlook(): Promise<{
+    dataHora: string;
+    total: number;
+    usuarioNome?: string | null;
+  } | null> {
+    return this.agendamentosService.getUltimaImportacaoOutlook().then((r) =>
+      r
+        ? {
+            dataHora: r.dataHora.toISOString(),
+            total: r.total,
+            usuarioNome: r.usuarioNome ?? null,
+          }
+        : null,
+    );
+  }
+
   @Permissoes('ADM', 'DEV')
   @Post('importar-planilha')
   @ApiConsumes('multipart/form-data')
@@ -465,5 +483,81 @@ export class AgendamentosController {
       console.error('Erro ao importar planilha:', error);
       throw error;
     }
+  }
+
+  @Permissoes('ADM', 'DEV')
+  @Post('importar-planilha-outlook')
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        arquivo: {
+          type: 'string',
+          format: 'binary',
+        },
+      },
+    },
+  })
+  @UseInterceptors(FileInterceptor('arquivo'))
+  async importarPlanilhaOutlook(
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 }),
+          new FileTypeValidator({
+            fileType:
+              /^(application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|application\/vnd\.ms-excel|application\/excel)$/,
+          }),
+        ],
+      }),
+    )
+    arquivo: Express.Multer.File,
+    @UsuarioAtual() usuario?: Usuario,
+  ): Promise<{ importados: number; erros: number; duplicados: number }> {
+    if (!arquivo) throw new Error('Arquivo não fornecido');
+    const workbook = XLSX.read(arquivo.buffer, { type: 'buffer' });
+    if (!workbook.SheetNames?.length) throw new Error('Planilha vazia ou inválida');
+    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+    if (!worksheet) throw new Error('Não foi possível ler a planilha');
+
+    // Linhas 1–3, colunas A–G: texto com "Data: DD/MM/AAAA" (ex.: "SMUL | Agendamentos - Data: 26/02/2026")
+    const linhas1a3 = XLSX.utils.sheet_to_json(worksheet, {
+      range: 'A1:G3',
+      header: 1,
+      defval: '',
+    }) as unknown as (string | number)[][];
+    let dataPlanilhaStr: string | null = null;
+    const textoTopo: string = (Array.isArray(linhas1a3) ? linhas1a3.flat() : [])
+      .map((c) => String(c ?? '').trim())
+      .join(' ');
+    const matchData = textoTopo.match(/Data:\s*(\d{1,2})\/(\d{1,2})\/(\d{4})/i);
+    if (matchData) {
+      const [, d, m, a] = matchData;
+      dataPlanilhaStr = `${d!.padStart(2, '0')}/${m!.padStart(2, '0')}/${a!}`;
+    }
+
+    const headerOutlook = [
+      'Tipo de Atendimento',
+      'Visitante',
+      'CPF',
+      'Horário',
+      'Técnico Responsável',
+      'Unidade',
+      'Número do Processo',
+    ];
+    const dados = XLSX.utils.sheet_to_json(worksheet, {
+      range: 4,
+      header: headerOutlook,
+      defval: null,
+    });
+    if (!dados || dados.length === 0) {
+      return { importados: 0, erros: 0, duplicados: 0 };
+    }
+    return this.agendamentosService.importarPlanilhaOutlook(
+      dados,
+      usuario,
+      dataPlanilhaStr ?? undefined,
+    );
   }
 }
