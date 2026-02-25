@@ -645,6 +645,7 @@ export class AgendamentosService {
   async importarPlanilha(
     dadosPlanilha: any[],
     coordenadoriaId?: string,
+    usuario?: Usuario,
   ): Promise<{ importados: number; erros: number; duplicados: number }> {
     let importados = 0;
     let erros = 0;
@@ -1391,7 +1392,48 @@ export class AgendamentosService {
       `   Total processado: ${importados + erros + duplicados + linhasPuladas}`,
     );
 
+    await this.registrarImportacaoPlanilha(importados, usuario?.id);
+
     return { importados, erros, duplicados };
+  }
+
+  async registrarImportacaoPlanilha(total: number, usuarioId?: string): Promise<void> {
+    try {
+      await this.prisma.logImportacaoPlanilha.create({
+        data: { total, usuarioId: usuarioId ?? undefined },
+      });
+    } catch (e: unknown) {
+      // P2021 = tabela não existe no banco; ignora sem quebrar a importação
+      if (e && typeof e === 'object' && 'code' in e && (e as { code: string }).code === 'P2021') {
+        return;
+      }
+      throw e;
+    }
+  }
+
+  async getUltimaImportacaoPlanilha(): Promise<{
+    dataHora: Date;
+    total: number;
+    usuarioNome?: string | null;
+  } | null> {
+    try {
+      const ultima = await this.prisma.logImportacaoPlanilha.findFirst({
+        orderBy: { dataHora: 'desc' },
+        include: { usuario: { select: { nome: true } } },
+      });
+      if (!ultima) return null;
+      return {
+        dataHora: ultima.dataHora,
+        total: ultima.total,
+        usuarioNome: ultima.usuario?.nome ?? null,
+      };
+    } catch (e: unknown) {
+      // P2021 = tabela não existe no banco; retorna null para não quebrar a página
+      if (e && typeof e === 'object' && 'code' in e && (e as { code: string }).code === 'P2021') {
+        return null;
+      }
+      throw e;
+    }
   }
 
   /**

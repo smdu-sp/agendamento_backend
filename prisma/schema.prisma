@@ -22,8 +22,9 @@ model Usuario {
   nomeSocial      String?
   coordenadoriaId String?
 
-  agendamentos  Agendamento[]
-  coordenadoria Coordenadoria? @relation(fields: [coordenadoriaId], references: [id], onDelete: SetNull)
+  agendamentos           Agendamento[]
+  coordenadoria          Coordenadoria?          @relation(fields: [coordenadoriaId], references: [id], onDelete: SetNull)
+  logImportacoesPlanilha LogImportacaoPlanilha[]
 
   @@map("usuarios")
 }
@@ -112,4 +113,14 @@ enum StatusAgendamento {
   CONCLUIDO
   ATENDIDO
   NAO_REALIZADO
+}
+
+model LogImportacaoPlanilha {
+  id        String   @id @default(uuid())
+  dataHora  DateTime @default(now())
+  total     Int      @default(0)
+  usuarioId String?
+  usuario   Usuario? @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+
+  @@map("log_importacao_planilha")
 }

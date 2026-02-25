@@ -130,6 +130,24 @@ export class AgendamentosController {
     return this.agendamentosService.excluir(id);
   }
 
+  @Permissoes('ADM', 'DEV', 'TEC', 'PONTO_FOCAL', 'COORDENADOR', 'PORTARIA')
+  @Get('ultima-importacao-planilha')
+  getUltimaImportacaoPlanilha(): Promise<{
+    dataHora: string;
+    total: number;
+    usuarioNome?: string | null;
+  } | null> {
+    return this.agendamentosService.getUltimaImportacaoPlanilha().then((r) =>
+      r
+        ? {
+            dataHora: r.dataHora.toISOString(),
+            total: r.total,
+            usuarioNome: r.usuarioNome ?? null,
+          }
+        : null,
+    );
+  }
+
   @Permissoes('ADM', 'DEV')
   @Post('importar-planilha')
   @ApiConsumes('multipart/form-data')
@@ -162,6 +180,7 @@ export class AgendamentosController {
     )
     arquivo: Express.Multer.File,
     @Body() body: { coordenadoriaId?: string },
+    @UsuarioAtual() usuario?: Usuario,
   ): Promise<{ importados: number; erros: number; duplicados: number }> {
     try {
       if (!arquivo) {
@@ -440,6 +459,7 @@ export class AgendamentosController {
       return this.agendamentosService.importarPlanilha(
         dados,
         body?.coordenadoriaId,
+        usuario,
       );
     } catch (error) {
       console.error('Erro ao importar planilha:', error);
