@@ -12,7 +12,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { $Enums, Permissao, Usuario } from '@prisma/client';
 
 /** Contexto do usuário logado (sem senha) para autorização. */
-type UsuarioLogadoContext = Pick<Usuario, 'permissao' | 'coordenadoriaId'>;
+type UsuarioLogadoContext = Pick<Usuario, 'permissao' | 'divisaoId'>;
 import { AppService } from 'src/app.service';
 import { Client as LdapClient } from 'ldapts';
 import {
@@ -76,9 +76,15 @@ export class UsuariosService {
     criadoEm: true,
     atualizadoEm: true,
     nomeSocial: true,
-    coordenadoriaId: true,
-    coordenadoria: {
-      select: { id: true, sigla: true, nome: true },
+    divisaoId: true,
+    divisao: {
+      select: {
+        id: true,
+        sigla: true,
+        nome: true,
+        coordenadoriaId: true,
+        coordenadoria: { select: { id: true, sigla: true, nome: true } },
+      },
     },
   };
 
@@ -89,8 +95,8 @@ export class UsuariosService {
       usuarioLogado &&
       (usuarioLogado.permissao === 'PONTO_FOCAL' ||
         usuarioLogado.permissao === 'COORDENADOR') &&
-      usuarioLogado.coordenadoriaId
-        ? { coordenadoriaId: usuarioLogado.coordenadoriaId }
+      usuarioLogado.divisaoId
+        ? { divisaoId: usuarioLogado.divisaoId }
         : {};
     const lista = await this.prisma.usuario.findMany({
       where,
@@ -116,28 +122,37 @@ export class UsuariosService {
 
   async buscarTecnicosPorCoordenadoria(
     coordenadoriaId: string,
+  ): Promise<{ id: string; nome: string; login: string }[]> {
+    return this.prisma.usuario.findMany({
+      where: {
+        permissao: 'TEC',
+        status: true,
+        divisao: { coordenadoriaId },
+      },
+      orderBy: { nome: 'asc' },
+      select: { id: true, nome: true, login: true },
+    });
+  }
+
+  async buscarTecnicosPorDivisao(
+    divisaoId: string,
     usuarioLogado?: UsuarioLogadoContext,
   ): Promise<{ id: string; nome: string; login: string }[]> {
-    // Ponto focal e coordenador só podem buscar técnicos da sua própria coordenadoria
     if (
       usuarioLogado &&
       (usuarioLogado.permissao === 'PONTO_FOCAL' ||
         usuarioLogado.permissao === 'COORDENADOR')
     ) {
-      if (usuarioLogado.coordenadoriaId !== coordenadoriaId) {
+      if (usuarioLogado.divisaoId !== divisaoId) {
         throw new ForbiddenException(
-          'Você só pode buscar técnicos da sua coordenadoria.',
+          'Você só pode buscar técnicos da sua divisão.',
         );
       }
     }
 
     const lista: { id: string; nome: string; login: string }[] =
       await this.prisma.usuario.findMany({
-        where: {
-          permissao: 'TEC',
-          status: true,
-          coordenadoriaId,
-        },
+        where: { permissao: 'TEC', status: true, divisaoId },
         orderBy: { nome: 'asc' },
         select: { id: true, nome: true, login: true },
       });
@@ -159,24 +174,24 @@ export class UsuariosService {
         usuarioLogado.permissao === 'COORDENADOR';
       if (isPontoFocalOuCoordenador) {
         throw new ForbiddenException(
-          'Já existe cadastro para este usuário. Contate um administrador para alterar a coordenadoria desta pessoa.',
+          'Já existe cadastro para este usuário. Contate um administrador para alterar a divisão desta pessoa.',
         );
       }
       if (loguser) throw new ForbiddenException('Login já cadastrado.');
       throw new ForbiddenException('Email já cadastrado.');
     }
-    // Ponto Focal e Coordenador só podem criar usuários na sua coordenadoria
-    let coordenadoriaId = createUsuarioDto.coordenadoriaId;
+    // Ponto Focal e Coordenador só podem criar usuários na sua divisão
+    let divisaoId = createUsuarioDto.divisaoId;
     if (
       usuarioLogado.permissao === 'PONTO_FOCAL' ||
       usuarioLogado.permissao === 'COORDENADOR'
     ) {
-      if (!usuarioLogado.coordenadoriaId) {
+      if (!usuarioLogado.divisaoId) {
         throw new ForbiddenException(
-          'Usuário sem coordenadoria atribuída não pode criar usuários.',
+          'Usuário sem divisão atribuída não pode criar usuários.',
         );
       }
-      coordenadoriaId = usuarioLogado.coordenadoriaId;
+      divisaoId = usuarioLogado.divisaoId;
     }
     let { permissao } = createUsuarioDto;
     permissao = this.validaPermissaoCriador(permissao, usuarioLogado.permissao);
@@ -184,7 +199,7 @@ export class UsuariosService {
       data: {
         ...createUsuarioDto,
         permissao,
-        coordenadoriaId,
+        divisaoId,
       },
     });
     if (!usuario)
@@ -207,8 +222,8 @@ export class UsuariosService {
       ...(usuarioLogado &&
         (usuarioLogado.permissao === 'PONTO_FOCAL' ||
           usuarioLogado.permissao === 'COORDENADOR') &&
-        usuarioLogado.coordenadoriaId && {
-          coordenadoriaId: usuarioLogado.coordenadoriaId,
+        usuarioLogado.divisaoId && {
+          divisaoId: usuarioLogado.divisaoId,
         }),
       ...(busca && {
         OR: [
@@ -251,9 +266,15 @@ export class UsuariosService {
         criadoEm: true,
         atualizadoEm: true,
         nomeSocial: true,
-        coordenadoriaId: true,
-        coordenadoria: {
-          select: { id: true, sigla: true, nome: true },
+        divisaoId: true,
+        divisao: {
+          select: {
+            id: true,
+            sigla: true,
+            nome: true,
+            coordenadoriaId: true,
+            coordenadoria: { select: { id: true, sigla: true, nome: true } },
+          },
         },
       },
     });
@@ -274,15 +295,15 @@ export class UsuariosService {
       select: this.selectUsuarioSemSenha,
     });
     if (!usuario) throw new NotFoundException('Usuário não encontrado.');
-    // Ponto Focal e Coordenador só podem ver usuários da sua coordenadoria
+    // Ponto Focal e Coordenador só podem ver usuários da sua divisão
     if (
       usuarioLogado &&
       (usuarioLogado.permissao === 'PONTO_FOCAL' ||
         usuarioLogado.permissao === 'COORDENADOR') &&
-      usuario.coordenadoriaId !== usuarioLogado.coordenadoriaId
+      usuario.divisaoId !== usuarioLogado.divisaoId
     ) {
       throw new ForbiddenException(
-        'Você só pode acessar usuários da sua coordenadoria.',
+        'Você só pode acessar usuários da sua divisão.',
       );
     }
     return usuario as UsuarioResponseDTO;
@@ -317,14 +338,14 @@ export class UsuariosService {
       where: { id },
     });
     if (!usuarioAntes) throw new NotFoundException('Usuário não encontrado.');
-    // Ponto Focal e Coordenador só podem editar usuários da sua coordenadoria
+    // Ponto Focal e Coordenador só podem editar usuários da sua divisão
     if (
       usuarioLogado.permissao === 'PONTO_FOCAL' ||
       usuarioLogado.permissao === 'COORDENADOR'
     ) {
-      if (usuarioAntes.coordenadoriaId !== usuarioLogado.coordenadoriaId) {
+      if (usuarioAntes.divisaoId !== usuarioLogado.divisaoId) {
         throw new ForbiddenException(
-          'Você só pode editar usuários da sua coordenadoria.',
+          'Você só pode editar usuários da sua divisão.',
         );
       }
     }
@@ -334,17 +355,17 @@ export class UsuariosService {
       );
     const {
       permissao: permissaoDto,
-      coordenadoriaId: coordDto,
+      divisaoId: divisaoDto,
       ...rest
     } = updateUsuarioDto;
-    // Ponto Focal e Coordenador não podem alterar a coordenadoria do usuário
-    const coordenadoriaIdFinal =
+    // Ponto Focal e Coordenador não podem alterar a divisão do usuário
+    const divisaoIdFinal =
       usuarioLogado.permissao === 'PONTO_FOCAL' ||
       usuarioLogado.permissao === 'COORDENADOR'
-        ? usuarioAntes.coordenadoriaId
-        : coordDto !== undefined
-          ? coordDto
-          : usuarioAntes.coordenadoriaId;
+        ? usuarioAntes.divisaoId
+        : divisaoDto !== undefined
+          ? divisaoDto
+          : usuarioAntes.divisaoId;
     const permissaoFinal =
       permissaoDto && permissaoDto.toString().trim() !== ''
         ? this.validaPermissaoCriador(permissaoDto, usuarioLogado.permissao)
@@ -361,7 +382,7 @@ export class UsuariosService {
       data: {
         ...rest,
         permissao: permissaoValida,
-        coordenadoriaId: coordenadoriaIdFinal,
+        divisaoId: divisaoIdFinal,
       },
       where: { id },
     });
@@ -374,18 +395,18 @@ export class UsuariosService {
   ): Promise<{ desativado: boolean }> {
     const usuarioAlvo = await this.prisma.usuario.findUnique({
       where: { id },
-      select: { coordenadoriaId: true },
+      select: { divisaoId: true },
     });
     if (!usuarioAlvo) throw new NotFoundException('Usuário não encontrado.');
-    // Ponto Focal e Coordenador só podem desativar usuários da sua coordenadoria
+    // Ponto Focal e Coordenador só podem desativar usuários da sua divisão
     if (
       usuarioLogado &&
       (usuarioLogado.permissao === 'PONTO_FOCAL' ||
         usuarioLogado.permissao === 'COORDENADOR')
     ) {
-      if (usuarioAlvo.coordenadoriaId !== usuarioLogado.coordenadoriaId) {
+      if (usuarioAlvo.divisaoId !== usuarioLogado.divisaoId) {
         throw new ForbiddenException(
-          'Você só pode desativar usuários da sua coordenadoria.',
+          'Você só pode desativar usuários da sua divisão.',
         );
       }
     }

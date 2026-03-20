@@ -86,33 +86,6 @@ export class AgendamentosService {
       // Busca usuário existente pelo login (independente da permissão)
       const usuario = await this.usuariosService.buscarPorLogin(login);
       if (usuario) {
-        // Busca o usuário completo do Prisma para verificar coordenadoriaId
-        const usuarioCompleto = await this.prisma.usuario.findUnique({
-          where: { id: usuario.id },
-          select: { id: true, coordenadoriaId: true, nome: true, login: true },
-        });
-
-        // Se o técnico já existe mas não tem coordenadoria e uma foi fornecida, atualiza
-        if (
-          coordenadoriaId &&
-          usuarioCompleto &&
-          !usuarioCompleto.coordenadoriaId
-        ) {
-          try {
-            await this.prisma.usuario.update({
-              where: { id: usuarioCompleto.id },
-              data: { coordenadoriaId },
-            });
-            console.log(
-              `Coordenadoria ${coordenadoriaId} atribuída ao técnico ${usuarioCompleto.nome} (${usuarioCompleto.login})`,
-            );
-          } catch (error) {
-            console.log(
-              `Erro ao atualizar coordenadoria do técnico ${usuarioCompleto.login}:`,
-              error.message,
-            );
-          }
-        }
         return usuario.id;
       }
 
@@ -154,12 +127,11 @@ export class AgendamentosService {
               email: dadosLDAP.email,
               permissao: 'TEC' as any,
               status: true,
-              coordenadoriaId: coordenadoriaId || undefined,
             },
             { permissao: 'ADM' } as Usuario, // Admin temporário para criação
           );
           console.log(
-            `Técnico ${dadosLDAP.nome} (${dadosLDAP.login}) criado automaticamente com permissão TEC${coordenadoriaId ? ` e coordenadoria ${coordenadoriaId}` : ''}`,
+            `Técnico ${dadosLDAP.nome} (${dadosLDAP.login}) criado automaticamente com permissão TEC`,
           );
           return novoTecnico.id;
         } catch (error) {
@@ -293,11 +265,12 @@ export class AgendamentosService {
         usuarioLogado.permissao === 'PONTO_FOCAL' ||
         usuarioLogado.permissao === 'COORDENADOR'
       ) {
-        // Ponto Focal e Coordenador veem agendamentos da sua coordenadoria
-        if (!usuarioLogado.coordenadoriaId) {
+        // Ponto Focal e Coordenador veem agendamentos da sua coordenadoria (via divisão)
+        const coordIdLogado = (usuarioLogado as any).divisao?.coordenadoriaId;
+        if (!coordIdLogado) {
           return { total: 0, pagina: 0, limite: 0, data: [] };
         }
-        filtroCoordenadoria = usuarioLogado.coordenadoriaId;
+        filtroCoordenadoria = coordIdLogado;
       } else if (usuarioLogado.permissao === 'TEC') {
         // Técnico só vê seus próprios agendamentos
         tecnicoId = usuarioLogado.id;
@@ -398,7 +371,7 @@ export class AgendamentosService {
         usuarioLogado.permissao === 'PONTO_FOCAL' ||
         usuarioLogado.permissao === 'COORDENADOR'
       ) {
-        filtroCoordenadoria = usuarioLogado.coordenadoriaId;
+        filtroCoordenadoria = (usuarioLogado as any).divisao?.coordenadoriaId;
         incluirSemTecnico = true;
       } else if (usuarioLogado.permissao === 'TEC') {
         filtroTecnico = usuarioLogado.id;
@@ -487,19 +460,20 @@ export class AgendamentosService {
       (usuarioLogado.permissao === 'PONTO_FOCAL' ||
         usuarioLogado.permissao === 'COORDENADOR')
     ) {
-      if (!usuarioLogado.coordenadoriaId) {
+      const coordLogado = (usuarioLogado as any).divisao?.coordenadoriaId;
+      if (!coordLogado) {
         throw new ForbiddenException(
           'Você não possui coordenadoria atribuída.',
         );
       }
-      if (agendamentoAtual.coordenadoriaId !== usuarioLogado.coordenadoriaId) {
+      if (agendamentoAtual.coordenadoriaId !== coordLogado) {
         throw new ForbiddenException(
           'Você só pode atualizar agendamentos da sua coordenadoria.',
         );
       }
       if (
         updateAgendamentoDto.coordenadoriaId &&
-        updateAgendamentoDto.coordenadoriaId !== usuarioLogado.coordenadoriaId
+        updateAgendamentoDto.coordenadoriaId !== coordLogado
       ) {
         throw new ForbiddenException(
           'Você não pode alterar a coordenadoria do agendamento.',
@@ -518,7 +492,10 @@ export class AgendamentosService {
     ) {
       const tecnico = await this.prisma.usuario.findUnique({
         where: { id: tecnicoId },
-        select: { coordenadoriaId: true, permissao: true },
+        select: {
+          permissao: true,
+          divisao: { select: { coordenadoriaId: true } },
+        },
       });
 
       if (!tecnico) {
@@ -529,7 +506,10 @@ export class AgendamentosService {
         throw new ForbiddenException('O usuário selecionado não é um técnico.');
       }
 
-      if (tecnico.coordenadoriaId !== usuarioLogado.coordenadoriaId) {
+      if (
+        tecnico.divisao?.coordenadoriaId !==
+        (usuarioLogado as any).divisao?.coordenadoriaId
+      ) {
         throw new ForbiddenException(
           'Você só pode atribuir técnicos da sua coordenadoria.',
         );
@@ -560,12 +540,13 @@ export class AgendamentosService {
       ) {
         const tecnico = await this.prisma.usuario.findUnique({
           where: { id: tecnicoId },
-          select: { coordenadoriaId: true },
+          select: { divisao: { select: { coordenadoriaId: true } } },
         });
 
         if (
           tecnico &&
-          tecnico.coordenadoriaId !== usuarioLogado.coordenadoriaId
+          tecnico.divisao?.coordenadoriaId !==
+            (usuarioLogado as any).divisao?.coordenadoriaId
         ) {
           throw new ForbiddenException(
             'O técnico encontrado não pertence à sua coordenadoria.',
@@ -1710,7 +1691,7 @@ export class AgendamentosService {
         usuarioLogado.permissao === 'PONTO_FOCAL' ||
         usuarioLogado.permissao === 'COORDENADOR'
       ) {
-        filtroCoordenadoria = usuarioLogado.coordenadoriaId ?? undefined;
+        filtroCoordenadoria = (usuarioLogado as any).divisao?.coordenadoriaId ?? undefined;
       } else if (coordenadoriaId) {
         filtroCoordenadoria = coordenadoriaId;
       }

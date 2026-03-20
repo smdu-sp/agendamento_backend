@@ -8,22 +8,22 @@ datasource db {
 }
 
 model Usuario {
-  id              String    @id @default(uuid())
-  nome            String
-  login           String    @unique
-  email           String    @unique
-  senha           String?   @db.VarChar(255)
-  permissao       Permissao @default(PORTARIA)
-  status          Boolean   @default(true)
-  avatar          String?   @db.Text
-  ultimoLogin     DateTime  @default(now())
-  criadoEm        DateTime  @default(now())
-  atualizadoEm    DateTime  @default(now()) @updatedAt
-  nomeSocial      String?
-  coordenadoriaId String?
+  id         String    @id @default(uuid())
+  nome       String
+  login      String    @unique
+  email      String    @unique
+  senha      String?   @db.VarChar(255)
+  permissao  Permissao @default(PORTARIA)
+  status     Boolean   @default(true)
+  avatar     String?   @db.Text
+  ultimoLogin  DateTime  @default(now())
+  criadoEm     DateTime  @default(now())
+  atualizadoEm DateTime  @default(now()) @updatedAt
+  nomeSocial   String?
+  divisaoId    String?
 
   agendamentos           Agendamento[]
-  coordenadoria          Coordenadoria?          @relation(fields: [coordenadoriaId], references: [id], onDelete: SetNull)
+  divisao                Divisao?                @relation(fields: [divisaoId], references: [id], onDelete: SetNull)
   logImportacoesPlanilha LogImportacaoPlanilha[]
   logImportacoesOutlook  LogImportacaoOutlook[]
 
@@ -94,9 +94,24 @@ model Coordenadoria {
   atualizadoEm DateTime @default(now()) @updatedAt
 
   agendamentos Agendamento[]
-  usuarios     Usuario[]
+  divisoes     Divisao[]
 
   @@map("coordenadorias")
+}
+
+model Divisao {
+  id              String   @id @default(uuid())
+  sigla           String   @unique
+  nome            String?
+  status          Boolean  @default(true)
+  criadoEm        DateTime @default(now())
+  atualizadoEm    DateTime @default(now()) @updatedAt
+  coordenadoriaId String?
+
+  coordenadoria Coordenadoria? @relation(fields: [coordenadoriaId], references: [id], onDelete: SetNull)
+  usuarios      Usuario[]
+
+  @@map("divisoes")
 }
 
 enum Permissao {

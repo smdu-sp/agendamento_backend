@@ -94,12 +94,16 @@ export class UsuariosController {
   @Get('buscar-tecnicos-por-coordenadoria/:coordenadoriaId')
   buscarTecnicosPorCoordenadoria(
     @Param('coordenadoriaId') coordenadoriaId: string,
+  ): Promise<{ id: string; nome: string; login: string }[]> {
+    return this.usuariosService.buscarTecnicosPorCoordenadoria(coordenadoriaId);
+  }
+
+  @Get('buscar-tecnicos-por-divisao/:divisaoId')
+  buscarTecnicosPorDivisao(
+    @Param('divisaoId') divisaoId: string,
     @UsuarioAtual() usuario?: Usuario,
   ): Promise<{ id: string; nome: string; login: string }[]> {
-    return this.usuariosService.buscarTecnicosPorCoordenadoria(
-      coordenadoriaId,
-      usuario,
-    );
+    return this.usuariosService.buscarTecnicosPorDivisao(divisaoId, usuario);
   }
 
   @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')

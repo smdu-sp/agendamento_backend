@@ -58,8 +58,8 @@ export class CoordenadoriasService {
       usuario?.permissao === 'COORDENADOR';
     const searchParams = {
       ...(isPontoFocalOuCoordenador &&
-        usuario?.coordenadoriaId && {
-          id: usuario.coordenadoriaId,
+        usuario?.divisaoId && {
+          id: (usuario as any).divisao?.coordenadoriaId,
         }),
       ...(busca && {
         OR: [
@@ -100,11 +100,8 @@ export class CoordenadoriasService {
     const isPontoFocalOuCoordenador =
       usuario?.permissao === 'PONTO_FOCAL' ||
       usuario?.permissao === 'COORDENADOR';
-    if (
-      isPontoFocalOuCoordenador &&
-      usuario?.coordenadoriaId &&
-      usuario.coordenadoriaId !== id
-    ) {
+    const coordenadoriaIdUsuario = (usuario as any)?.divisao?.coordenadoriaId;
+    if (isPontoFocalOuCoordenador && coordenadoriaIdUsuario && coordenadoriaIdUsuario !== id) {
       throw new ForbiddenException(
         'Você só pode acessar a coordenadoria à qual está vinculado.',
       );
@@ -137,11 +134,8 @@ export class CoordenadoriasService {
     const isPontoFocalOuCoordenador =
       usuario?.permissao === 'PONTO_FOCAL' ||
       usuario?.permissao === 'COORDENADOR';
-    if (
-      isPontoFocalOuCoordenador &&
-      usuario?.coordenadoriaId &&
-      usuario.coordenadoriaId !== id
-    ) {
+    const coordenadoriaIdUsuarioAtualizar = (usuario as any)?.divisao?.coordenadoriaId;
+    if (isPontoFocalOuCoordenador && coordenadoriaIdUsuarioAtualizar && coordenadoriaIdUsuarioAtualizar !== id) {
       throw new ForbiddenException(
         'Você só pode editar a coordenadoria à qual está vinculado.',
       );
