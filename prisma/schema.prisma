@@ -122,6 +122,7 @@ enum Permissao {
   PONTO_FOCAL
   COORDENADOR
   PORTARIA
+  DIRETOR
 }
 
 enum StatusAgendamento {

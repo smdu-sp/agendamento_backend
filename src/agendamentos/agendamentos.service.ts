@@ -260,6 +260,7 @@ export class AgendamentosService {
 
     // Filtros baseados na permissão do usuário
     let filtroCoordenadoria: string | undefined;
+    let filtroDivisaoTecnico: string | undefined;
     if (usuarioLogado) {
       if (
         usuarioLogado.permissao === 'PONTO_FOCAL' ||
@@ -271,6 +272,13 @@ export class AgendamentosService {
           return { total: 0, pagina: 0, limite: 0, data: [] };
         }
         filtroCoordenadoria = coordIdLogado;
+      } else if (usuarioLogado.permissao === 'DIRETOR') {
+        // Diretor vê apenas agendamentos cujo técnico pertence à sua divisão
+        const divisaoIdLogado = (usuarioLogado as any).divisaoId;
+        if (!divisaoIdLogado) {
+          return { total: 0, pagina: 0, limite: 0, data: [] };
+        }
+        filtroDivisaoTecnico = divisaoIdLogado;
       } else if (usuarioLogado.permissao === 'TEC') {
         // Técnico só vê seus próprios agendamentos
         tecnicoId = usuarioLogado.id;
@@ -293,18 +301,21 @@ export class AgendamentosService {
       ...(dataInicio &&
         dataFim && {
           dataHora: {
-            gte: new Date(dataInicio + 'T00:00:00.000Z'), // Início do dia em UTC
-            lte: new Date(dataFim + 'T23:59:59.999Z'), // Fim do dia em UTC
+            gte: new Date(dataInicio + 'T00:00:00.000Z'),
+            lte: new Date(dataFim + 'T23:59:59.999Z'),
           },
         }),
       ...(filtroCoordenadoria && {
         coordenadoriaId: filtroCoordenadoria,
       }),
-      ...(coordenadoriaId && {
+      ...(coordenadoriaId && !filtroDivisaoTecnico && {
         coordenadoriaId,
       }),
       ...(tecnicoId && {
         tecnicoId,
+      }),
+      ...(filtroDivisaoTecnico && {
+        tecnico: { divisaoId: filtroDivisaoTecnico },
       }),
     };
 
@@ -364,6 +375,7 @@ export class AgendamentosService {
 
     let filtroCoordenadoria: string | undefined;
     let filtroTecnico: string | undefined;
+    let filtroDivisaoTecnicoDia: string | undefined;
     let incluirSemTecnico = false;
 
     if (usuarioLogado) {
@@ -373,6 +385,9 @@ export class AgendamentosService {
       ) {
         filtroCoordenadoria = (usuarioLogado as any).divisao?.coordenadoriaId;
         incluirSemTecnico = true;
+      } else if (usuarioLogado.permissao === 'DIRETOR') {
+        const divisaoIdLogado = (usuarioLogado as any).divisaoId;
+        if (divisaoIdLogado) filtroDivisaoTecnicoDia = divisaoIdLogado;
       } else if (usuarioLogado.permissao === 'TEC') {
         filtroTecnico = usuarioLogado.id;
       }
@@ -390,8 +405,10 @@ export class AgendamentosService {
 
     if (filtroCoordenadoria) {
       whereClause.coordenadoriaId = filtroCoordenadoria;
-      // Para ponto focal, não filtra por técnico (mostra todos da coordenadoria, com ou sem técnico)
-      // Para outros, não precisa fazer nada especial
+    }
+
+    if (filtroDivisaoTecnicoDia) {
+      whereClause.tecnico = { divisaoId: filtroDivisaoTecnicoDia };
     }
 
     if (filtroTecnico) {
@@ -1685,6 +1702,7 @@ export class AgendamentosService {
   ): Promise<DashboardResponseDTO> {
     const anoFiltro = ano ?? new Date().getFullYear();
     let filtroCoordenadoria: string | undefined;
+    let filtroDivisaoTecnico: string | undefined;
 
     if (usuarioLogado) {
       if (
@@ -1692,6 +1710,8 @@ export class AgendamentosService {
         usuarioLogado.permissao === 'COORDENADOR'
       ) {
         filtroCoordenadoria = (usuarioLogado as any).divisao?.coordenadoriaId ?? undefined;
+      } else if (usuarioLogado.permissao === 'DIRETOR') {
+        filtroDivisaoTecnico = (usuarioLogado as any).divisaoId ?? undefined;
       } else if (coordenadoriaId) {
         filtroCoordenadoria = coordenadoriaId;
       }
@@ -1751,9 +1771,15 @@ export class AgendamentosService {
 
     const anoMin = new Date().getFullYear() - 5;
 
+    const filtroPorTecnicoDivisao = filtroDivisaoTecnico
+      ? { tecnico: { divisaoId: filtroDivisaoTecnico } }
+      : filtroCoordenadoria
+        ? { coordenadoriaId: filtroCoordenadoria }
+        : {};
+
     const whereBase = {
       dataHora: { gte: dataInicio, lte: dataFim },
-      ...(filtroCoordenadoria && { coordenadoriaId: filtroCoordenadoria }),
+      ...filtroPorTecnicoDivisao,
     };
 
     const [
@@ -1791,9 +1817,7 @@ export class AgendamentosService {
             gte: new Date(anoMin, 0, 1),
             lte: new Date(),
           },
-          ...(filtroCoordenadoria && {
-            coordenadoriaId: filtroCoordenadoria,
-          }),
+          ...filtroPorTecnicoDivisao,
         },
         select: { dataHora: true },
       }),

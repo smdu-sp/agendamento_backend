@@ -42,7 +42,7 @@ export class AgendamentosController {
     return this.agendamentosService.criar(createAgendamentoDto);
   }
 
-  @Permissoes('ADM', 'DEV', 'TEC', 'PONTO_FOCAL', 'COORDENADOR', 'PORTARIA')
+  @Permissoes('ADM', 'DEV', 'TEC', 'PONTO_FOCAL', 'COORDENADOR', 'PORTARIA', 'DIRETOR')
   @Get('buscar-tudo')
   buscarTudo(
     @Query('pagina') pagina?: string,
@@ -68,7 +68,7 @@ export class AgendamentosController {
     );
   }
 
-  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
+  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR', 'DIRETOR')
   @Get('dashboard')
   getDashboard(
     @Query('tipoPeriodo') tipoPeriodo?: 'semana' | 'mes' | 'ano',
@@ -96,7 +96,7 @@ export class AgendamentosController {
     );
   }
 
-  @Permissoes('ADM', 'DEV', 'TEC', 'PONTO_FOCAL', 'COORDENADOR', 'PORTARIA')
+  @Permissoes('ADM', 'DEV', 'TEC', 'PONTO_FOCAL', 'COORDENADOR', 'PORTARIA', 'DIRETOR')
   @Get('buscar-do-dia')
   buscarDoDia(
     @UsuarioAtual() usuario?: Usuario,
@@ -104,7 +104,7 @@ export class AgendamentosController {
     return this.agendamentosService.buscarDoDia(usuario);
   }
 
-  @Permissoes('ADM', 'DEV', 'TEC', 'PONTO_FOCAL', 'COORDENADOR', 'PORTARIA')
+  @Permissoes('ADM', 'DEV', 'TEC', 'PONTO_FOCAL', 'COORDENADOR', 'PORTARIA', 'DIRETOR')
   @Get('buscar-por-id/:id')
   buscarPorId(@Param('id') id: string): Promise<AgendamentoResponseDTO> {
     return this.agendamentosService.buscarPorId(id);
@@ -130,7 +130,7 @@ export class AgendamentosController {
     return this.agendamentosService.excluir(id);
   }
 
-  @Permissoes('ADM', 'DEV', 'TEC', 'PONTO_FOCAL', 'COORDENADOR', 'PORTARIA')
+  @Permissoes('ADM', 'DEV', 'TEC', 'PONTO_FOCAL', 'COORDENADOR', 'PORTARIA', 'DIRETOR')
   @Get('ultima-importacao-planilha')
   getUltimaImportacaoPlanilha(): Promise<{
     dataHora: string;
@@ -148,7 +148,7 @@ export class AgendamentosController {
     );
   }
 
-  @Permissoes('ADM', 'DEV', 'TEC', 'PONTO_FOCAL', 'COORDENADOR', 'PORTARIA')
+  @Permissoes('ADM', 'DEV', 'TEC', 'PONTO_FOCAL', 'COORDENADOR', 'PORTARIA', 'DIRETOR')
   @Get('ultima-importacao-outlook')
   getUltimaImportacaoOutlook(): Promise<{
     dataHora: string;
@@ -327,7 +327,7 @@ export class AgendamentosController {
       // Lê os dados como array de arrays começando da linha de cabeçalho
       // Isso evita o erro "invalid column -1" que acontece quando passamos array para header
       let dadosArray = XLSX.utils.sheet_to_json(worksheet, {
-        range: `A${linhaInicio}:Z1000`, // Começa na linha de cabeçalho (formato A9:Z1000)
+        range: `A${linhaInicio}:Z1048576`, // Começa na linha de cabeçalho e lê até o limite da planilha
         header: 1, // Retorna como array de arrays
         defval: null,
         raw: false,

@@ -1,0 +1,2 @@
+-- AlterTable: adiciona DIRETOR ao enum Permissao
+ALTER TABLE `usuarios` MODIFY COLUMN `permissao` ENUM('DEV','ADM','TEC','USR','PONTO_FOCAL','COORDENADOR','PORTARIA','DIRETOR') NOT NULL DEFAULT 'PORTARIA';
