@@ -267,11 +267,15 @@ export class AgendamentosService {
     let filtroCoordenadoria: string | undefined;
     let filtroDivisaoTecnico: string | undefined;
     if (usuarioLogado) {
-      if (
-        usuarioLogado.permissao === 'PONTO_FOCAL' ||
-        usuarioLogado.permissao === 'COORDENADOR'
-      ) {
-        // Ponto Focal e Coordenador veem agendamentos da sua coordenadoria (via divisão)
+      if (usuarioLogado.permissao === 'PONTO_FOCAL') {
+        // Ponto Focal vê apenas agendamentos com técnico da sua divisão
+        const divisaoIdLogado = (usuarioLogado as any).divisaoId;
+        if (!divisaoIdLogado) {
+          return { total: 0, pagina: 0, limite: 0, data: [] };
+        }
+        filtroDivisaoTecnico = divisaoIdLogado;
+      } else if (usuarioLogado.permissao === 'COORDENADOR') {
+        // Coordenador vê agendamentos da sua coordenadoria (via divisão)
         const coordIdLogado = (usuarioLogado as any).divisao?.coordenadoriaId;
         if (!coordIdLogado) {
           return { total: 0, pagina: 0, limite: 0, data: [] };
@@ -389,10 +393,10 @@ export class AgendamentosService {
     let incluirSemTecnico = false;
 
     if (usuarioLogado) {
-      if (
-        usuarioLogado.permissao === 'PONTO_FOCAL' ||
-        usuarioLogado.permissao === 'COORDENADOR'
-      ) {
+      if (usuarioLogado.permissao === 'PONTO_FOCAL') {
+        const divisaoIdLogado = (usuarioLogado as any).divisaoId;
+        if (divisaoIdLogado) filtroDivisaoTecnicoDia = divisaoIdLogado;
+      } else if (usuarioLogado.permissao === 'COORDENADOR') {
         filtroCoordenadoria = (usuarioLogado as any).divisao?.coordenadoriaId;
         incluirSemTecnico = true;
       } else if (usuarioLogado.permissao === 'DIRETOR') {
@@ -1731,10 +1735,9 @@ export class AgendamentosService {
     let filtroDivisaoTecnico: string | undefined;
 
     if (usuarioLogado) {
-      if (
-        usuarioLogado.permissao === 'PONTO_FOCAL' ||
-        usuarioLogado.permissao === 'COORDENADOR'
-      ) {
+      if (usuarioLogado.permissao === 'PONTO_FOCAL') {
+        filtroDivisaoTecnico = (usuarioLogado as any).divisaoId ?? undefined;
+      } else if (usuarioLogado.permissao === 'COORDENADOR') {
         filtroCoordenadoria = (usuarioLogado as any).divisao?.coordenadoriaId ?? undefined;
         if (divisaoId) {
           filtroDivisaoTecnico = divisaoId;
