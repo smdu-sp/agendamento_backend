@@ -8,7 +8,7 @@ import {
 import { CreateAgendamentoDto } from './dto/create-agendamento.dto';
 import { UpdateAgendamentoDto } from './dto/update-agendamento.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { Agendamento, StatusAgendamento, Usuario } from '@prisma/client';
+import { Agendamento, Prisma, StatusAgendamento, Usuario } from '@prisma/client';
 import { AppService } from 'src/app.service';
 import {
   AgendamentoPaginadoResponseDTO,
@@ -217,10 +217,15 @@ export class AgendamentosService {
       }
     }
 
+    const statusInicial = processoTrim
+      ? StatusAgendamento.AGENDADO
+      : StatusAgendamento.SOLICITADO;
+
     const agendamento: Agendamento = await this.prisma.agendamento.create({
       data: {
         ...restDto,
         tipoAgendamentoId,
+        status: statusInicial,
         municipe: restDto.municipe
           ? this.padronizarNome(restDto.municipe)
           : null,
@@ -250,6 +255,71 @@ export class AgendamentosService {
     return agendamento as AgendamentoResponseDTO;
   }
 
+  /**
+   * Mesmo padrão do front: `^\d{4}\.\d{4}/\d{7}-\d$` (após trim).
+   * Usa `[.]` no literal SQL para evitar escapes; o padrão vai como literal (não placeholder),
+   * pois em alguns drivers o REGEXP com parâmetro preparado não filtra corretamente.
+   */
+  private static readonly REGEX_PROCESSO_DIGITAL_SQL =
+    '^[0-9]{4}[.][0-9]{4}/[0-9]{7}-[0-9]$';
+
+  private montarWhereSqlBuscarTudo(
+    busca: string | undefined,
+    status: string | undefined,
+    dataInicio: string | undefined,
+    dataFim: string | undefined,
+    filtroCoordenadoria: string | undefined,
+    coordenadoriaId: string | undefined,
+    tecnicoId: string | undefined,
+    filtroDivisaoTecnico: string | undefined,
+    tipoProcesso: 'DIGITAL' | 'FISICO',
+  ): Prisma.Sql {
+    const parts: Prisma.Sql[] = [];
+    const regexLiteral = Prisma.raw(
+      `'${AgendamentosService.REGEX_PROCESSO_DIGITAL_SQL}'`,
+    );
+
+    if (busca) {
+      const p = `%${busca}%`;
+      parts.push(
+        Prisma.sql`(COALESCE(municipe,'') LIKE ${p} OR COALESCE(processo,'') LIKE ${p} OR COALESCE(cpf,'') LIKE ${p})`,
+      );
+    }
+    if (status && status !== '') {
+      parts.push(Prisma.sql`status = ${status as StatusAgendamento}`);
+    }
+    if (dataInicio && dataFim) {
+      parts.push(
+        Prisma.sql`dataHora >= ${new Date(dataInicio + 'T00:00:00.000Z')} AND dataHora <= ${new Date(dataFim + 'T23:59:59.999Z')}`,
+      );
+    }
+    if (filtroCoordenadoria) {
+      parts.push(Prisma.sql`coordenadoriaId = ${filtroCoordenadoria}`);
+    }
+    if (coordenadoriaId && !filtroDivisaoTecnico) {
+      parts.push(Prisma.sql`coordenadoriaId = ${coordenadoriaId}`);
+    }
+    if (tecnicoId) {
+      parts.push(Prisma.sql`tecnicoId = ${tecnicoId}`);
+    }
+    if (filtroDivisaoTecnico) {
+      parts.push(
+        Prisma.sql`tecnicoId IN (SELECT id FROM usuarios WHERE divisaoId = ${filtroDivisaoTecnico})`,
+      );
+    }
+    if (tipoProcesso === 'DIGITAL') {
+      parts.push(
+        Prisma.sql`processo IS NOT NULL AND TRIM(processo) REGEXP ${regexLiteral}`,
+      );
+    } else {
+      parts.push(
+        Prisma.sql`(processo IS NULL OR TRIM(processo) NOT REGEXP ${regexLiteral})`,
+      );
+    }
+
+    return parts.length ? Prisma.join(parts, ' AND ') : Prisma.sql`TRUE`;
+  }
+
   async buscarTudo(
     pagina: number = 1,
     limite: number = 10,
@@ -259,6 +329,7 @@ export class AgendamentosService {
     dataFim?: string,
     coordenadoriaId?: string,
     tecnicoId?: string,
+    tipoProcesso?: string,
     usuarioLogado?: Usuario,
   ): Promise<AgendamentoPaginadoResponseDTO> {
     [pagina, limite] = this.app.verificaPagina(pagina, limite);
@@ -327,6 +398,80 @@ export class AgendamentosService {
         tecnico: { divisaoId: filtroDivisaoTecnico },
       }),
     };
+
+    const tipoFiltro =
+      tipoProcesso === 'DIGITAL' || tipoProcesso === 'FISICO'
+        ? tipoProcesso
+        : undefined;
+
+    if (tipoFiltro) {
+      const whereSql = this.montarWhereSqlBuscarTudo(
+        busca,
+        status,
+        dataInicio,
+        dataFim,
+        filtroCoordenadoria,
+        coordenadoriaId,
+        tecnicoId,
+        filtroDivisaoTecnico,
+        tipoFiltro,
+      );
+
+      const countRows = await this.prisma.$queryRaw<[{ c: bigint }]>`
+        SELECT COUNT(*) AS c FROM agendamentos WHERE ${whereSql}
+      `;
+      const total = Number(countRows[0]?.c ?? 0);
+      if (total === 0) {
+        return { total: 0, pagina: 0, limite: 0, data: [] };
+      }
+      [pagina, limite] = this.app.verificaLimite(pagina, limite, total);
+
+      const idRows = await this.prisma.$queryRaw<{ id: string }[]>`
+        SELECT id FROM agendamentos WHERE ${whereSql}
+        ORDER BY dataHora ASC
+        LIMIT ${limite} OFFSET ${(pagina - 1) * limite}
+      `;
+      const ids = idRows.map((r) => r.id);
+      if (ids.length === 0) {
+        return { total, pagina, limite, data: [] };
+      }
+
+      const agendamentos: Agendamento[] = await this.prisma.agendamento.findMany(
+        {
+          where: { id: { in: ids } },
+          orderBy: { dataHora: 'asc' },
+          include: {
+            tipoAgendamento: true,
+            motivoNaoAtendimento: true,
+            coordenadoria: true,
+            tecnico: {
+              select: {
+                id: true,
+                nome: true,
+                login: true,
+                email: true,
+                divisao: {
+                  select: {
+                    sigla: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      );
+
+      agendamentos.forEach((ag) => {
+        ag.cpf = this.mascararCPF(ag.cpf);
+      });
+
+      return {
+        total,
+        pagina: +pagina,
+        limite: +limite,
+        data: agendamentos as AgendamentoResponseDTO[],
+      };
+    }
 
     const total: number = await this.prisma.agendamento.count({
       where: searchParams,
@@ -1352,13 +1497,14 @@ export class AgendamentosService {
         }
 
         try {
+          const processoImport = processo ? String(processo).trim() : '';
           await this.prisma.agendamento.create({
             data: {
               municipe: municipe
                 ? this.padronizarNome(String(municipe).trim())
                 : null,
               cpf: cpf ? String(cpf).trim() : null,
-              processo: processo ? String(processo).trim() : null,
+              processo: processoImport || null,
               dataHora: dataHoraObj,
               dataFim,
               resumo: tipoAgendamento ? String(tipoAgendamento).trim() : null,
@@ -1368,6 +1514,9 @@ export class AgendamentosService {
               tecnicoRF: tecnicoRF ? String(tecnicoRF).trim() : null,
               email: email || null,
               importado: true,
+              status: processoImport
+                ? StatusAgendamento.AGENDADO
+                : StatusAgendamento.SOLICITADO,
             },
           });
 
@@ -1563,13 +1712,14 @@ export class AgendamentosService {
           continue;
         }
 
-        const processo = get('Número do Processo');
+        const processoRaw = get('Número do Processo');
+        const processoOutlook = processoRaw ? String(processoRaw).trim() : '';
         const cpf = get('CPF');
         const tecnicoResponsavelPlanilha = get('Técnico Responsável');
 
         const duplicado = await this.prisma.agendamento.findFirst({
           where: {
-            processo: processo || undefined,
+            processo: processoOutlook || undefined,
             dataHora,
             coordenadoriaId: coordenadoriaId || undefined,
             importadoOutlook: true,
@@ -1585,7 +1735,7 @@ export class AgendamentosService {
           data: {
             municipe: visitante,
             cpf: cpf || undefined,
-            processo: processo || undefined,
+            processo: processoOutlook || undefined,
             dataHora,
             dataFim: umaHoraDepois,
             importado: true,
@@ -1594,7 +1744,9 @@ export class AgendamentosService {
             tipoAgendamentoId: tipoAgendamentoId || undefined,
             coordenadoriaId: coordenadoriaId || undefined,
             tecnicoId: undefined,
-            status: 'SOLICITADO',
+            status: processoOutlook
+              ? StatusAgendamento.AGENDADO
+              : StatusAgendamento.SOLICITADO,
           },
         });
         importados++;

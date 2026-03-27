@@ -53,6 +53,7 @@ export class AgendamentosController {
     @Query('dataFim') dataFim?: string,
     @Query('coordenadoriaId') coordenadoriaId?: string,
     @Query('tecnicoId') tecnicoId?: string,
+    @Query('tipoProcesso') tipoProcesso?: string,
     @UsuarioAtual() usuario?: Usuario,
   ): Promise<AgendamentoPaginadoResponseDTO> {
     return this.agendamentosService.buscarTudo(
@@ -64,6 +65,7 @@ export class AgendamentosController {
       dataFim,
       coordenadoriaId,
       tecnicoId,
+      tipoProcesso,
       usuario,
     );
   }
