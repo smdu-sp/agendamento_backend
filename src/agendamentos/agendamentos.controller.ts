@@ -78,6 +78,7 @@ export class AgendamentosController {
     @Query('dataInicio') dataInicio?: string,
     @Query('dataFim') dataFim?: string,
     @Query('coordenadoriaId') coordenadoriaId?: string,
+    @Query('divisaoId') divisaoId?: string,
     @UsuarioAtual() usuario?: Usuario,
   ): Promise<DashboardResponseDTO> {
     const periodo =
@@ -92,6 +93,7 @@ export class AgendamentosController {
       dataInicio,
       dataFim,
       coordenadoriaId,
+      divisaoId,
       usuario,
     );
   }
