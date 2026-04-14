@@ -16,11 +16,20 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AgendamentosService } from './agendamentos.service';
 import { CreateAgendamentoDto } from './dto/create-agendamento.dto';
+import { CreateAgendamentoPreProjetoDto } from './dto/create-agendamento-pre-projeto.dto';
 import { UpdateAgendamentoDto } from './dto/update-agendamento.dto';
+import { PreProjetoSolicitacaoResponseDto } from './dto/pre-projeto-solicitacao-response.dto';
 import { Permissoes } from 'src/auth/decorators/permissoes.decorator';
+import { IsPublic } from 'src/auth/decorators/is-public.decorator';
 import { UsuarioAtual } from 'src/auth/decorators/usuario-atual.decorator';
 import { Usuario } from '@prisma/client';
-import { ApiBearerAuth, ApiTags, ApiConsumes, ApiBody } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiTags,
+  ApiConsumes,
+  ApiBody,
+  ApiOperation,
+} from '@nestjs/swagger';
 import {
   AgendamentoPaginadoResponseDTO,
   AgendamentoResponseDTO,
@@ -33,6 +42,18 @@ import * as XLSX from 'xlsx';
 @Controller('agendamentos')
 export class AgendamentosController {
   constructor(private readonly agendamentosService: AgendamentosService) {}
+
+  @IsPublic()
+  @Post('publico/pre-projetos')
+  @ApiOperation({
+    summary:
+      'Solicitação pública — Pré-projetos (formulário Arthur Saboya / pre-projetos)',
+  })
+  criarSolicitacaoPreProjetos(
+    @Body() dto: CreateAgendamentoPreProjetoDto,
+  ): Promise<PreProjetoSolicitacaoResponseDto> {
+    return this.agendamentosService.criarSolicitacaoPreProjetos(dto);
+  }
 
   @Permissoes('ADM', 'DEV')
   @Post('criar')

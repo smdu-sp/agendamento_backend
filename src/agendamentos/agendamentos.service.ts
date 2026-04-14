@@ -6,7 +6,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { CreateAgendamentoDto } from './dto/create-agendamento.dto';
+import { CreateAgendamentoPreProjetoDto } from './dto/create-agendamento-pre-projeto.dto';
 import { UpdateAgendamentoDto } from './dto/update-agendamento.dto';
+import { PreProjetoSolicitacaoResponseDto } from './dto/pre-projeto-solicitacao-response.dto';
+import {
+  PRE_PROJETO_FORMACAO_LABEL,
+  PRE_PROJETO_NATUREZA_LABEL,
+  PRE_PROJETO_TIPO_AGENDAMENTO_TEXTO,
+} from './constants/pre-projetos-form';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { Agendamento, Prisma, StatusAgendamento, Usuario } from '@prisma/client';
 import { AppService } from 'src/app.service';
@@ -253,6 +260,48 @@ export class AgendamentosService {
     });
 
     return agendamento as AgendamentoResponseDTO;
+  }
+
+  /**
+   * Cadastro público alinhado ao formulário `Arthur Saboya/app/pre-projetos/page.tsx`.
+   * Campos do body: nome → municipe; descricao → duvida; demais iguais ao front.
+   */
+  async criarSolicitacaoPreProjetos(
+    dto: CreateAgendamentoPreProjetoDto,
+  ): Promise<PreProjetoSolicitacaoResponseDto> {
+    const formacaoTexto =
+      dto.formacao === 'outra'
+        ? (dto.formacaoOutro ?? '').trim()
+        : PRE_PROJETO_FORMACAO_LABEL[
+            dto.formacao as keyof typeof PRE_PROJETO_FORMACAO_LABEL
+          ];
+    const naturezaTexto =
+      dto.naturezaDuvida === 'outra'
+        ? (dto.naturezaOutro ?? '').trim()
+        : PRE_PROJETO_NATUREZA_LABEL[
+            dto.naturezaDuvida as keyof typeof PRE_PROJETO_NATUREZA_LABEL
+          ];
+
+    const dataHora = new Date();
+    const tipoAgendamentoId = await this.buscarOuCriarTipoPorTexto(
+      PRE_PROJETO_TIPO_AGENDAMENTO_TEXTO,
+    );
+
+    const agendamento = await this.prisma.agendamento.create({
+      data: {
+        municipe: this.padronizarNome(dto.nome.trim()),
+        email: dto.email.trim().toLowerCase(),
+        formacao: formacaoTexto,
+        naturezaDuvida: naturezaTexto,
+        duvida: dto.descricao.trim(),
+        tipoAgendamentoId,
+        dataHora,
+        dataFim: this.calcularDataFim(dataHora, 60),
+        status: StatusAgendamento.SOLICITADO,
+      },
+    });
+
+    return { id: agendamento.id };
   }
 
   /**

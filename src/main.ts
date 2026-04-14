@@ -18,7 +18,11 @@ async function bootstrap() {
   app.use(json({ limit: '50mb' }));
   app.use(urlencoded({ extended: true, limit: '50mb' }));
   const port = process.env.PORT || 3000;
-  app.enableCors({ origin: process.env.CORS_ORIGIN || 'http://localhost:3001' });
+  const corsEnv = process.env.CORS_ORIGIN;
+  const corsOrigin = corsEnv
+    ? corsEnv.split(',').map((o) => o.trim())
+    : ['http://localhost:3001', 'http://localhost:3000'];
+  app.enableCors({ origin: corsOrigin });
   const options = new DocumentBuilder()
     .addBearerAuth()
     .setTitle('Atendimento ao Público - Agendamentos')

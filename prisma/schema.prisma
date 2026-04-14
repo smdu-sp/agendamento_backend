@@ -41,6 +41,9 @@ model Agendamento {
   importadoOutlook          Boolean           @default(false)
   tecnicoResponsavelPlanilha String?          @db.VarChar(255)
   resumo                    String?           @db.Text
+  formacao                  String?
+  naturezaDuvida            String?
+  duvida                    String?           @db.Text
   tipoAgendamentoId         String?
   motivoNaoAtendimentoId    String?
   coordenadoriaId           String?
