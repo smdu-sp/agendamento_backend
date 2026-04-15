@@ -26,7 +26,7 @@ import {
 export class CoordenadoriasController {
   constructor(private readonly coordenadoriasService: CoordenadoriasService) {}
 
-  @Permissoes('ADM')
+  @Permissoes('ADM', 'DEV')
   @Post('criar')
   criar(
     @Body() createCoordenadoriaDto: CreateCoordenadoriaDto,
@@ -66,7 +66,7 @@ export class CoordenadoriasController {
     return this.coordenadoriasService.listaCompleta();
   }
 
-  @Permissoes('ADM')
+  @Permissoes('ADM', 'DEV')
   @Patch('atualizar/:id')
   atualizar(
     @Param('id') id: string,
@@ -80,7 +80,7 @@ export class CoordenadoriasController {
     );
   }
 
-  @Permissoes('ADM')
+  @Permissoes('ADM', 'DEV')
   @Delete('desativar/:id')
   excluir(@Param('id') id: string): Promise<{ desativado: boolean }> {
     return this.coordenadoriasService.excluir(id);

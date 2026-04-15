@@ -49,3 +49,7 @@ export const PRE_PROJETO_NATUREZA_LABEL: Record<
 /** Texto único em `tipos_agendamento` para este fluxo. */
 export const PRE_PROJETO_TIPO_AGENDAMENTO_TEXTO =
   'Pré-projetos (Arthur Saboya)';
+
+/** Tipo e resumo ao registrar agendamento a partir de solicitação (dúvida pré-projeto). */
+export const DUVIDA_PRE_PROJETO_TIPO_TEXTO = 'Dúvida pré projeto';
+export const DUVIDA_PRE_PROJETO_RESUMO = 'Dúvida pré projeto';

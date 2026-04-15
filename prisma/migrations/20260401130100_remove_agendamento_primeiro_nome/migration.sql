@@ -1,0 +1,2 @@
+-- Migration restaurada para manter consistência do diretório de migrations.
+-- Não há alterações SQL a aplicar aqui.

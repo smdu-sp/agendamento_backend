@@ -24,7 +24,7 @@ import {
 export class DivisoesController {
   constructor(private readonly divisoesService: DivisoesService) {}
 
-  @Permissoes('ADM')
+  @Permissoes('ADM', 'DEV')
   @Post('criar')
   criar(@Body() dto: CreateDivisaoDto): Promise<DivisaoResponseDTO> {
     return this.divisoesService.criar(dto);
@@ -61,7 +61,7 @@ export class DivisoesController {
     return this.divisoesService.listaCompleta(coordenadoriaId);
   }
 
-  @Permissoes('ADM')
+  @Permissoes('ADM', 'DEV')
   @Patch('atualizar/:id')
   atualizar(
     @Param('id') id: string,
@@ -70,7 +70,7 @@ export class DivisoesController {
     return this.divisoesService.atualizar(id, dto);
   }
 
-  @Permissoes('ADM')
+  @Permissoes('ADM', 'DEV')
   @Delete('desativar/:id')
   excluir(@Param('id') id: string): Promise<{ desativado: boolean }> {
     return this.divisoesService.excluir(id);

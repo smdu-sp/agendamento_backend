@@ -41,12 +41,10 @@ model Agendamento {
   importadoOutlook          Boolean           @default(false)
   tecnicoResponsavelPlanilha String?          @db.VarChar(255)
   resumo                    String?           @db.Text
-  formacao                  String?
-  naturezaDuvida            String?
-  duvida                    String?           @db.Text
   tipoAgendamentoId         String?
   motivoNaoAtendimentoId    String?
   coordenadoriaId           String?
+  divisaoId                 String?
   tecnicoId                 String?
   tecnicoRF                 String?
   email                     String?
@@ -58,7 +56,10 @@ model Agendamento {
   tipoAgendamento      TipoAgendamento? @relation(fields: [tipoAgendamentoId], references: [id], onDelete: NoAction)
   motivoNaoAtendimento Motivo?          @relation(fields: [motivoNaoAtendimentoId], references: [id], onDelete: NoAction)
   coordenadoria        Coordenadoria?   @relation(fields: [coordenadoriaId], references: [id], onDelete: NoAction)
+  divisao              Divisao?         @relation(fields: [divisaoId], references: [id], onDelete: SetNull)
   tecnico              Usuario?         @relation(fields: [tecnicoId], references: [id], onDelete: NoAction)
+
+  solicitacaoPreProjetoArthurSaboya SolicitacaoPreProjetoArthurSaboya?
 
   @@map("agendamentos")
 }
@@ -96,8 +97,9 @@ model Coordenadoria {
   criadoEm     DateTime @default(now())
   atualizadoEm DateTime @default(now()) @updatedAt
 
-  agendamentos Agendamento[]
-  divisoes     Divisao[]
+  agendamentos                       Agendamento[]
+  divisoes                           Divisao[]
+  solicitacoesPreProjetoArthurSaboya SolicitacaoPreProjetoArthurSaboya[]
 
   @@map("coordenadorias")
 }
@@ -113,8 +115,44 @@ model Divisao {
 
   coordenadoria Coordenadoria? @relation(fields: [coordenadoriaId], references: [id], onDelete: SetNull)
   usuarios      Usuario[]
+  agendamentos  Agendamento[]
+  solicitacoesPreProjetoArthurSaboya SolicitacaoPreProjetoArthurSaboya[]
 
   @@map("divisoes")
+}
+
+/// Solicitações públicas de dúvidas / pré-projetos (formulário Arthur Saboya).
+model SolicitacaoPreProjetoArthurSaboya {
+  id              String   @id @default(uuid())
+  protocolo       String   @unique
+  criadoEm        DateTime @default(now())
+  atualizadoEm    DateTime @default(now()) @updatedAt
+
+  nome            String
+  email           String
+
+  formacaoValor   String
+  formacaoOutro   String?
+  formacaoTexto   String   @db.VarChar(255)
+
+  naturezaValor   String
+  naturezaOutro   String?
+  naturezaTexto   String   @db.VarChar(500)
+
+  duvida          String   @db.Text
+
+  status          StatusSolicitacaoPreProjeto @default(SOLICITADO)
+
+  coordenadoriaId String?
+  divisaoId       String?
+
+  agendamentoId String? @unique
+  agendamento   Agendamento? @relation(fields: [agendamentoId], references: [id], onDelete: SetNull)
+
+  coordenadoria Coordenadoria? @relation(fields: [coordenadoriaId], references: [id], onDelete: SetNull)
+  divisao       Divisao?       @relation(fields: [divisaoId], references: [id], onDelete: SetNull)
+
+  @@map("solicitacoes_pre_projeto_arthur_saboya")
 }
 
 enum Permissao {
@@ -137,6 +175,13 @@ enum StatusAgendamento {
   NAO_REALIZADO
 }
 
+enum StatusSolicitacaoPreProjeto {
+  SOLICITADO
+  RESPONDIDO
+  AGUARDANDO_DATA
+  AGENDAMENTO_CRIADO
+}
+
 model LogImportacaoPlanilha {
   id        String   @id @default(uuid())
   dataHora  DateTime @default(now())
@@ -155,4 +200,31 @@ model LogImportacaoOutlook {
   usuario   Usuario? @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
 
   @@map("log_importacao_outlook")
+}
+
+model MunicipeConta {
+  id                 String                       @id @default(uuid())
+  nome               String
+  email              String                       @unique
+  senhaHash          String                       @map("senha_hash")
+  status             Boolean                      @default(true)
+  ultimoLogin        DateTime?                    @map("ultimo_login")
+  criadoEm           DateTime                     @default(now()) @map("criado_em")
+  atualizadoEm       DateTime                     @default(now()) @updatedAt @map("atualizado_em")
+  tokensRedefinicao  MunicipeTokenRedefinicaoSenha[]
+
+  @@map("municipes_contas")
+}
+
+model MunicipeTokenRedefinicaoSenha {
+  id              String         @id @default(uuid())
+  contaId         String         @map("conta_id")
+  tokenHash       String         @map("token_hash")
+  expiraEm        DateTime       @map("expira_em")
+  utilizadoEm     DateTime?      @map("utilizado_em")
+  criadoEm        DateTime       @default(now()) @map("criado_em")
+  conta           MunicipeConta  @relation(fields: [contaId], references: [id], onDelete: Cascade)
+
+  @@index([contaId, tokenHash])
+  @@map("municipes_tokens_redefinicao_senha")
 }

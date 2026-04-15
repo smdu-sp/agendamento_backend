@@ -12,6 +12,7 @@ import {
   ParseFilePipe,
   MaxFileSizeValidator,
   FileTypeValidator,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AgendamentosService } from './agendamentos.service';
@@ -19,6 +20,9 @@ import { CreateAgendamentoDto } from './dto/create-agendamento.dto';
 import { CreateAgendamentoPreProjetoDto } from './dto/create-agendamento-pre-projeto.dto';
 import { UpdateAgendamentoDto } from './dto/update-agendamento.dto';
 import { PreProjetoSolicitacaoResponseDto } from './dto/pre-projeto-solicitacao-response.dto';
+import { SolicitacaoPreProjetoPaginadoDto } from './dto/solicitacao-pre-projeto-paginado.dto';
+import { CriarAgendamentoSolicitacaoPreProjetoPortalDto } from './dto/criar-agendamento-solicitacao-pre-projeto-portal.dto';
+import { StatusSolicitacaoPreProjeto } from '@prisma/client';
 import { Permissoes } from 'src/auth/decorators/permissoes.decorator';
 import { IsPublic } from 'src/auth/decorators/is-public.decorator';
 import { UsuarioAtual } from 'src/auth/decorators/usuario-atual.decorator';
@@ -53,6 +57,110 @@ export class AgendamentosController {
     @Body() dto: CreateAgendamentoPreProjetoDto,
   ): Promise<PreProjetoSolicitacaoResponseDto> {
     return this.agendamentosService.criarSolicitacaoPreProjetos(dto);
+  }
+
+  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL')
+  @Get('solicitacoes-pre-projetos/arthur-saboya/portal/buscar-tudo')
+  @ApiOperation({
+    summary:
+      'Portal interno Arthur Saboya — pedidos de pré-projetos (ponto focal da divisão configurada ou ADM/DEV)',
+  })
+  buscarSolicitacoesPortalArthurSaboya(
+    @Query('pagina') pagina?: string,
+    @Query('limite') limite?: string,
+    @Query('busca') busca?: string,
+    @Query('status') status?: string,
+    @UsuarioAtual() usuario?: Usuario,
+  ): Promise<SolicitacaoPreProjetoPaginadoDto> {
+    let statusFiltro: StatusSolicitacaoPreProjeto | undefined;
+    const s = status?.trim().toUpperCase();
+    if (s === 'SOLICITADO') {
+      statusFiltro = StatusSolicitacaoPreProjeto.SOLICITADO;
+    } else if (s === 'AGUARDANDO_DATA') {
+      statusFiltro = StatusSolicitacaoPreProjeto.AGUARDANDO_DATA;
+    }
+    return this.agendamentosService.buscarSolicitacoesPreProjetosPortalArthurSaboya(
+      +(pagina ?? 1) || 1,
+      +(limite ?? 10) || 10,
+      busca,
+      usuario,
+      statusFiltro,
+    );
+  }
+
+  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL')
+  @Post(
+    'solicitacoes-pre-projetos/arthur-saboya/portal/:id/confirmar-resposta-enviada',
+  )
+  @ApiOperation({
+    summary:
+      'Portal Arthur Saboya — confirma que a dúvida foi respondida por e-mail (status → Respondido).',
+  })
+  portalArthurSaboyaConfirmarRespostaEnviada(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UsuarioAtual() usuario: Usuario,
+  ) {
+    return this.agendamentosService.portalArthurSaboyaConfirmarRespostaEnviada(
+      id,
+      usuario,
+    );
+  }
+
+  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL')
+  @Post(
+    'solicitacoes-pre-projetos/arthur-saboya/portal/:id/marcar-aguardando-data',
+  )
+  @ApiOperation({
+    summary:
+      'Portal Arthur Saboya — marca solicitação como aguardando data/hora do munícipe.',
+  })
+  portalArthurSaboyaMarcarAguardandoData(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UsuarioAtual() usuario: Usuario,
+  ) {
+    return this.agendamentosService.portalArthurSaboyaMarcarAguardandoData(
+      id,
+      usuario,
+    );
+  }
+
+  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL')
+  @Post(
+    'solicitacoes-pre-projetos/arthur-saboya/portal/:id/criar-agendamento',
+  )
+  @ApiOperation({
+    summary:
+      'Portal Arthur Saboya — registra agendamento na coordenadoria a partir da solicitação (status → Agendamento criado).',
+  })
+  portalArthurSaboyaCriarAgendamentoDaSolicitacao(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CriarAgendamentoSolicitacaoPreProjetoPortalDto,
+    @UsuarioAtual() usuario: Usuario,
+  ) {
+    return this.agendamentosService.portalArthurSaboyaCriarAgendamentoDaSolicitacao(
+      id,
+      dto,
+      usuario,
+    );
+  }
+
+  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR', 'PORTARIA', 'DIRETOR')
+  @Get('solicitacoes-pre-projetos/buscar-tudo')
+  @ApiOperation({
+    summary: 'Lista solicitações de pré-projetos (Arthur Saboya)',
+  })
+  buscarSolicitacoesPreProjetos(
+    @Query('pagina') pagina?: string,
+    @Query('limite') limite?: string,
+    @Query('busca') busca?: string,
+    @UsuarioAtual() usuario?: Usuario,
+  ): Promise<SolicitacaoPreProjetoPaginadoDto> {
+    return this.agendamentosService.buscarSolicitacoesPreProjetosArthurSaboya(
+      +(pagina ?? 1) || 1,
+      +(limite ?? 10) || 10,
+      busca,
+      usuario,
+    );
   }
 
   @Permissoes('ADM', 'DEV')

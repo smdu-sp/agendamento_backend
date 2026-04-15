@@ -12,11 +12,12 @@ import { APP_GUARD } from '@nestjs/core';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { ImpersonationGuard } from './auth/guards/impersonation.guard';
 import { RoleGuard } from './auth/guards/role.guard';
+import { MunicipesAuthModule } from './municipes-auth/municipes-auth.module';
 
 @Global()
 @Module({
   exports: [AppService],
-  imports: [PrismaModule, AuthModule, UsuariosModule, CoordenadoriasModule, DivisoesModule, AgendamentosModule, MotivosModule, TiposAgendamentoModule],
+  imports: [PrismaModule, AuthModule, UsuariosModule, CoordenadoriasModule, DivisoesModule, AgendamentosModule, MotivosModule, TiposAgendamentoModule, MunicipesAuthModule],
   providers: [AppService,
     {
       provide: APP_GUARD,
