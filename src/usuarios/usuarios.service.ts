@@ -111,7 +111,13 @@ export class UsuariosService {
   async buscarTecnicos(): Promise<{ id: string; nome: string }[]> {
     const lista: { id: string; nome: string }[] =
       await this.prisma.usuario.findMany({
-        where: { permissao: 'TEC', status: true },
+        where: {
+          status: true,
+          OR: [
+            { permissao: 'TEC' },
+            { permissao: 'DEV', divisaoId: { not: null } },
+          ],
+        },
         orderBy: { nome: 'asc' },
         select: { id: true, nome: true },
       });
@@ -125,9 +131,12 @@ export class UsuariosService {
   ): Promise<{ id: string; nome: string; login: string }[]> {
     return this.prisma.usuario.findMany({
       where: {
-        permissao: 'TEC',
         status: true,
         divisao: { coordenadoriaId },
+        OR: [
+          { permissao: 'TEC' },
+          { permissao: 'DEV', divisaoId: { not: null } },
+        ],
       },
       orderBy: { nome: 'asc' },
       select: { id: true, nome: true, login: true },
@@ -152,7 +161,14 @@ export class UsuariosService {
 
     const lista: { id: string; nome: string; login: string }[] =
       await this.prisma.usuario.findMany({
-        where: { permissao: 'TEC', status: true, divisaoId },
+        where: {
+          status: true,
+          divisaoId,
+          OR: [
+            { permissao: 'TEC' },
+            { permissao: 'DEV', divisaoId: { not: null } },
+          ],
+        },
         orderBy: { nome: 'asc' },
         select: { id: true, nome: true, login: true },
       });

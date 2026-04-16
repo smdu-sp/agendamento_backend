@@ -46,6 +46,7 @@ import {
 } from './dto/dashboard-response.dto';
 import { UsuariosService } from 'src/usuarios/usuarios.service';
 import { CoordenadoriasService } from 'src/coordenadorias/coordenadorias.service';
+import { instanteCivilSaoPaulo } from './sao-paulo-datetime.util';
 
 @Injectable()
 export class AgendamentosService {
@@ -243,6 +244,33 @@ export class AgendamentosService {
     return u?.divisaoId ?? null;
   }
 
+  private async coordenadoriaIdDoUsuarioLogado(
+    usuario?: Usuario,
+  ): Promise<string | undefined> {
+    if (!usuario) return undefined;
+    const coordViaToken = (usuario as any).divisao?.coordenadoriaId as
+      | string
+      | undefined;
+    if (coordViaToken) return coordViaToken;
+    const divisaoId = (usuario as any).divisaoId as string | undefined;
+    if (!divisaoId) return undefined;
+    const d = await this.prisma.divisao.findUnique({
+      where: { id: divisaoId },
+      select: { coordenadoriaId: true },
+    });
+    return d?.coordenadoriaId ?? undefined;
+  }
+
+  private usuarioPodeSerTecnicoAtribuido(usuario: {
+    permissao: string;
+    divisaoId?: string | null;
+  }): boolean {
+    return (
+      usuario.permissao === 'TEC' ||
+      (usuario.permissao === 'DEV' && !!usuario.divisaoId)
+    );
+  }
+
   /**
    * Busca tipo de agendamento por texto; se não existir, cadastra automaticamente.
    */
@@ -438,6 +466,14 @@ export class AgendamentosService {
 
     if (usuarioLogado) {
       const perm = usuarioLogado.permissao;
+      const permReal = (usuarioLogado as any).permissaoReal as
+        | string
+        | undefined;
+      const isAdmOuDevRealOuEfetivo =
+        perm === 'ADM' ||
+        perm === 'DEV' ||
+        permReal === 'ADM' ||
+        permReal === 'DEV';
       if (perm === 'PONTO_FOCAL') {
         const divId = (usuarioLogado as any).divisaoId as string | undefined;
         const coordId = (usuarioLogado as any).divisao?.coordenadoriaId as
@@ -464,11 +500,7 @@ export class AgendamentosService {
           return { total: 0, pagina: 0, limite: 0, data: [] };
         }
         andParts.push({ divisaoId: divId });
-      } else if (
-        perm !== 'ADM' &&
-        perm !== 'DEV' &&
-        perm !== 'PORTARIA'
-      ) {
+      } else if (!isAdmOuDevRealOuEfetivo && perm !== 'PORTARIA') {
         return { total: 0, pagina: 0, limite: 0, data: [] };
       }
     }
@@ -514,9 +546,17 @@ export class AgendamentosService {
       throw new ForbiddenException('Autenticação necessária.');
     }
     const perm = usuarioLogado.permissao;
+    const permReal = (usuarioLogado as any).permissaoReal as
+      | string
+      | undefined;
     const divSala = this.divisaoPreProjetosEnv();
 
-    if (perm === 'ADM' || perm === 'DEV') {
+    if (
+      perm === 'ADM' ||
+      perm === 'DEV' ||
+      permReal === 'ADM' ||
+      permReal === 'DEV'
+    ) {
       return this.listarSolicitacoesPreProjetoComWhere(
         pagina,
         limite,
@@ -677,8 +717,14 @@ export class AgendamentosService {
       throw new NotFoundException('Solicitação não encontrada.');
     }
     const perm = usuario.permissao;
+    const permReal = (usuario as any).permissaoReal as string | undefined;
     const divSala = this.divisaoPreProjetosEnv();
-    if (perm === 'ADM' || perm === 'DEV') {
+    if (
+      perm === 'ADM' ||
+      perm === 'DEV' ||
+      permReal === 'ADM' ||
+      permReal === 'DEV'
+    ) {
       return row;
     }
     if (perm !== 'PONTO_FOCAL') {
@@ -951,8 +997,16 @@ export class AgendamentosService {
       } else if (usuarioLogado.permissao === 'TEC') {
         // Técnico só vê seus próprios agendamentos
         tecnicoId = usuarioLogado.id;
+      } else if (usuarioLogado.permissao === 'DEV') {
+        // DEV com unidade vê processos da própria coordenadoria; sem unidade mantém visão global.
+        const coordIdLogado = await this.coordenadoriaIdDoUsuarioLogado(
+          usuarioLogado,
+        );
+        if (coordIdLogado) {
+          filtroCoordenadoria = coordIdLogado;
+        }
       }
-      // ADM, DEV e PORTARIA veem todos
+      // ADM, PORTARIA e DEV sem unidade veem todos
     }
 
     const envCoordPre = this.coordenadoriaPreProjetosEnv();
@@ -1178,6 +1232,11 @@ export class AgendamentosService {
         if (divisaoIdLogado) filtroDivisaoTecnicoDia = divisaoIdLogado;
       } else if (usuarioLogado.permissao === 'TEC') {
         filtroTecnico = usuarioLogado.id;
+      } else if (usuarioLogado.permissao === 'DEV') {
+        const coordIdLogado = await this.coordenadoriaIdDoUsuarioLogado(
+          usuarioLogado,
+        );
+        if (coordIdLogado) filtroCoordenadoria = coordIdLogado;
       }
     }
 
@@ -1327,17 +1386,12 @@ export class AgendamentosService {
 
     let tecnicoId = updateAgendamentoDto.tecnicoId;
 
-    // Validação: Ponto Focal e Coordenador só podem atribuir técnicos da sua coordenadoria
-    if (
-      usuarioLogado &&
-      (usuarioLogado.permissao === 'PONTO_FOCAL' ||
-        usuarioLogado.permissao === 'COORDENADOR') &&
-      tecnicoId
-    ) {
+    if (tecnicoId) {
       const tecnico = await this.prisma.usuario.findUnique({
         where: { id: tecnicoId },
         select: {
           permissao: true,
+          divisaoId: true,
           divisao: { select: { coordenadoriaId: true } },
         },
       });
@@ -1346,17 +1400,26 @@ export class AgendamentosService {
         throw new NotFoundException('Técnico não encontrado.');
       }
 
-      if (tecnico.permissao !== 'TEC') {
-        throw new ForbiddenException('O usuário selecionado não é um técnico.');
+      if (!this.usuarioPodeSerTecnicoAtribuido(tecnico)) {
+        throw new ForbiddenException(
+          'Somente técnicos ou DEV com unidade podem ser atribuídos.',
+        );
       }
 
+      // Ponto Focal e Coordenador só podem atribuir técnico/DEV da própria coordenadoria
       if (
-        tecnico.divisao?.coordenadoriaId !==
-        (usuarioLogado as any).divisao?.coordenadoriaId
+        usuarioLogado &&
+        (usuarioLogado.permissao === 'PONTO_FOCAL' ||
+          usuarioLogado.permissao === 'COORDENADOR')
       ) {
-        throw new ForbiddenException(
-          'Você só pode atribuir técnicos da sua coordenadoria.',
-        );
+        if (
+          tecnico.divisao?.coordenadoriaId !==
+          (usuarioLogado as any).divisao?.coordenadoriaId
+        ) {
+          throw new ForbiddenException(
+            'Você só pode atribuir técnicos da sua coordenadoria.',
+          );
+        }
       }
     }
 
@@ -1912,35 +1975,42 @@ export class AgendamentosService {
           );
           if (matchBR) {
             const [, dia, mes, ano, hora, minuto, segundo] = matchBR;
-            // Cria a data como UTC para salvar exatamente como está na planilha
-            // Isso evita conversões automáticas de timezone que causam diferença de horas
-            dataHoraObj = new Date(
-              Date.UTC(
-                parseInt(ano),
-                parseInt(mes) - 1, // Mês é 0-indexed
-                parseInt(dia),
-                parseInt(hora),
-                parseInt(minuto),
-                segundo ? parseInt(segundo) : 0,
-              ),
+            // Data/hora civil em Brasília → instante UTC correto no banco
+            dataHoraObj = instanteCivilSaoPaulo(
+              parseInt(ano, 10),
+              parseInt(mes, 10) - 1,
+              parseInt(dia, 10),
+              parseInt(hora, 10),
+              parseInt(minuto, 10),
+              segundo ? parseInt(segundo, 10) : 0,
             );
           } else {
-            // Tenta parse direto (formato ISO ou outros)
-            const parsedDate = new Date(dataHoraLimpa);
-            if (!isNaN(parsedDate.getTime())) {
-              // Extrai os componentes da data e cria como UTC
-              // Isso garante que a hora será salva exatamente como interpretada
-              const ano = parsedDate.getFullYear();
-              const mes = parsedDate.getMonth();
-              const dia = parsedDate.getDate();
-              const hora = parsedDate.getHours();
-              const minuto = parsedDate.getMinutes();
-              const segundo = parsedDate.getSeconds();
-              dataHoraObj = new Date(
-                Date.UTC(ano, mes, dia, hora, minuto, segundo),
-              );
+            const limpaFuso = dataHoraLimpa.trim();
+            const temFusoExplicito =
+              /Z$/i.test(limpaFuso) ||
+              /[+-]\d{2}:\d{2}(:\d{2})?$/.test(limpaFuso);
+            if (temFusoExplicito) {
+              dataHoraObj = new Date(limpaFuso);
             } else {
-              dataHoraObj = parsedDate;
+              const parsedDate = new Date(limpaFuso);
+              if (!isNaN(parsedDate.getTime())) {
+                const ano = parsedDate.getFullYear();
+                const mes = parsedDate.getMonth();
+                const dia = parsedDate.getDate();
+                const hora = parsedDate.getHours();
+                const minuto = parsedDate.getMinutes();
+                const segundo = parsedDate.getSeconds();
+                dataHoraObj = instanteCivilSaoPaulo(
+                  ano,
+                  mes,
+                  dia,
+                  hora,
+                  minuto,
+                  segundo,
+                );
+              } else {
+                dataHoraObj = parsedDate;
+              }
             }
           }
         }
@@ -2183,9 +2253,8 @@ export class AgendamentosService {
               tecnicoRF: tecnicoRF ? String(tecnicoRF).trim() : null,
               email: email || null,
               importado: true,
-              status: processoImport
-                ? StatusAgendamento.AGENDADO
-                : StatusAgendamento.SOLICITADO,
+              // Importação: sempre SOLICITADO até confirmação explícita de agendado.
+              status: StatusAgendamento.SOLICITADO,
             },
           });
 
@@ -2413,9 +2482,8 @@ export class AgendamentosService {
             tipoAgendamentoId: tipoAgendamentoId || undefined,
             coordenadoriaId: coordenadoriaId || undefined,
             tecnicoId: undefined,
-            status: processoOutlook
-              ? StatusAgendamento.AGENDADO
-              : StatusAgendamento.SOLICITADO,
+            // Importação Outlook: sempre SOLICITADO até confirmação explícita.
+            status: StatusAgendamento.SOLICITADO,
           },
         });
         importados++;
@@ -2456,7 +2524,7 @@ export class AgendamentosService {
         mes = hoje.getMonth();
         dia = hoje.getDate();
       }
-      const d = new Date(ano, mes, dia, h, min);
+      const d = instanteCivilSaoPaulo(ano, mes, dia, h, min, 0);
       return Number.isNaN(d.getTime()) ? null : d;
     }
 
@@ -2467,7 +2535,14 @@ export class AgendamentosService {
     const br = /^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})/.exec(s);
     if (br) {
       const [, dia, mes, ano, h, min] = br;
-      const d2 = new Date(Number(ano), Number(mes) - 1, Number(dia), Number(h), Number(min));
+      const d2 = instanteCivilSaoPaulo(
+        Number(ano),
+        Number(mes) - 1,
+        Number(dia),
+        Number(h),
+        Number(min),
+        0,
+      );
       return Number.isNaN(d2.getTime()) ? null : d2;
     }
     const soHorario = /^(\d{1,2}):(\d{2})(?::(\d{2}))?/.exec(s);
@@ -2493,7 +2568,14 @@ export class AgendamentosService {
         dia = hoje.getDate();
       }
       const seg = Number(soHorario[3] ?? 0);
-      const d3 = new Date(ano, mes, dia, Number(h), Number(min), seg);
+      const d3 = instanteCivilSaoPaulo(
+        ano,
+        mes,
+        dia,
+        Number(h),
+        Number(min),
+        seg,
+      );
       return Number.isNaN(d3.getTime()) ? null : d3;
     }
     return null;
@@ -2568,6 +2650,17 @@ export class AgendamentosService {
         }
       } else if (usuarioLogado.permissao === 'DIRETOR') {
         filtroDivisaoTecnico = (usuarioLogado as any).divisaoId ?? undefined;
+      } else if (usuarioLogado.permissao === 'DEV') {
+        const coordIdDev = await this.coordenadoriaIdDoUsuarioLogado(
+          usuarioLogado,
+        );
+        if (coordIdDev) {
+          filtroCoordenadoria = coordIdDev;
+        } else if (divisaoId) {
+          filtroDivisaoTecnico = divisaoId;
+        } else if (coordenadoriaId) {
+          filtroCoordenadoria = coordenadoriaId;
+        }
       } else if (divisaoId) {
         filtroDivisaoTecnico = divisaoId;
       } else if (coordenadoriaId) {

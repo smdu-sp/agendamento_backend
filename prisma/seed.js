@@ -42,6 +42,99 @@ async function main() {
         },
     });
     console.log(portaria);
+    await seedEstrutura();
+}
+
+async function seedEstrutura() {
+    const siglas = [
+      'GAB/SMUL',
+      'ATAJ',
+      'ATECC',
+      'RESID',
+      'RESID/DRVE',
+      'RESID/DRGP',
+      'RESID/DRH',
+      'COMIN',
+      'COMIN/DCIMP',
+      'COMIN/DCIGP',
+      'SERVIN',
+      'SERVIN/DSIMP',
+      'SERVIN/DSIGP',
+      'PARHIS',
+      'PARHIS/DHGP',
+      'PARHIS/DHMP',
+      'PARHIS/DPS',
+      'PARHIS/DHPP',
+      'CONTRU',
+      'CONTRU/DACESS',
+      'CONTRU/DSUS',
+      'CONTRU/DLR',
+      'CONTRU/DINS',
+      'CASE',
+      'CASE/DCAD',
+      'CASE/DLE',
+      'CASE/DDU',
+      'CAP',
+      'PLANURB',
+      'PLANURB/DOT',
+      'PLANURB/DMA',
+      'PLANURB/DART',
+      'DEUSO',
+      'DEUSO/DMUS',
+      'DEUSO/DNUS',
+      'DEUSO/DSIZ',
+      'GEOINFO',
+      'GEOINFO/DSIG',
+      'GEOINFO/DAG',
+      'GEOINFO/DAD',
+      'CEPEUC',
+      'CEPEUC/DVF',
+      'ILUME',
+      'GTEC',
+      'CAEPP',
+      'CAEPP/DERPP',
+      'CAEPP/DECPP',
+      'CAEPP/DESPP',
+      'COSH',
+    ];
+
+    const coordenadoriasMap = new Map();
+
+    for (const sigla of siglas) {
+        let coordenadoriaSigla;
+        let divisaoSigla;
+
+        if (sigla.includes("/")) {
+            const [coord] = sigla.split("/");
+            coordenadoriaSigla = coord;
+            divisaoSigla = sigla;
+        } else {
+            coordenadoriaSigla = sigla;
+            divisaoSigla = `${sigla}/G`;
+        }
+
+        if (!coordenadoriasMap.has(coordenadoriaSigla)) {
+            const coord = await prisma.coordenadoria.upsert({
+                where: { sigla: coordenadoriaSigla },
+                create: { sigla: coordenadoriaSigla },
+                update: {},
+            });
+            coordenadoriasMap.set(coordenadoriaSigla, coord);
+        }
+
+        const coordenadoria = coordenadoriasMap.get(coordenadoriaSigla);
+
+        await prisma.divisao.upsert({
+            where: { sigla: divisaoSigla },
+            create: {
+                sigla: divisaoSigla,
+                coordenadoriaId: coordenadoria.id,
+            },
+            update: {
+                coordenadoriaId: coordenadoria.id,
+            },
+        });
+    }
 }
 main()
     .then(async () => {

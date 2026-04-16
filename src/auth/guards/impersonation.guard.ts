@@ -35,7 +35,7 @@ export class ImpersonationGuard implements CanActivate {
     const permissao = header.trim().toUpperCase();
     if (!PERMISSOES_VALIDAS.includes(permissao as Permissao)) return true;
 
-    request.user = { ...user, permissao };
+    request.user = { ...user, permissao, permissaoReal: user.permissao };
     return true;
   }
 }

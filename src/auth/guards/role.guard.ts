@@ -13,8 +13,11 @@ export class RoleGuard implements CanActivate {
     if (!permissoes || permissoes.length === 0) return true;
     const request = context.switchToHttp().getRequest();
     const permissao = request.user?.permissao;
+    const permissaoReal = request.user?.permissaoReal as string | undefined;
     if (!permissao) return false;
     if (permissao === 'DEV') return true;
+    if (permissaoReal === 'DEV') return true;
+    if (permissaoReal === 'ADM') return true;
     return permissoes.includes(permissao);
   }
 }
