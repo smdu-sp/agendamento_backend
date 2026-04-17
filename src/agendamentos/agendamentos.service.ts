@@ -551,12 +551,15 @@ export class AgendamentosService {
       | undefined;
     const divSala = this.divisaoPreProjetosEnv();
 
-    if (
-      perm === 'ADM' ||
-      perm === 'DEV' ||
-      permReal === 'ADM' ||
-      permReal === 'DEV'
-    ) {
+    const divUser = (usuarioLogado as any).divisaoId as string | undefined;
+    const isDevRealOuEfetivo = perm === 'DEV' || permReal === 'DEV';
+    const isAdmSalaArthur =
+      (perm === 'ADM' || permReal === 'ADM') &&
+      !!divSala &&
+      !!divUser &&
+      divUser === divSala;
+
+    if (isDevRealOuEfetivo || isAdmSalaArthur) {
       return this.listarSolicitacoesPreProjetoComWhere(
         pagina,
         limite,
@@ -572,7 +575,6 @@ export class AgendamentosService {
       );
     }
 
-    const divUser = (usuarioLogado as any).divisaoId as string | undefined;
     if (!divSala || !divUser || divUser !== divSala) {
       throw new ForbiddenException(
         'Acesso restrito ao ponto focal cadastrado na divisão da Sala Arthur Saboya.',
@@ -719,18 +721,19 @@ export class AgendamentosService {
     const perm = usuario.permissao;
     const permReal = (usuario as any).permissaoReal as string | undefined;
     const divSala = this.divisaoPreProjetosEnv();
-    if (
-      perm === 'ADM' ||
-      perm === 'DEV' ||
-      permReal === 'ADM' ||
-      permReal === 'DEV'
-    ) {
+    const divUser = (usuario as any).divisaoId as string | undefined;
+    const isDevRealOuEfetivo = perm === 'DEV' || permReal === 'DEV';
+    const isAdmSalaArthur =
+      (perm === 'ADM' || permReal === 'ADM') &&
+      !!divSala &&
+      !!divUser &&
+      divUser === divSala;
+    if (isDevRealOuEfetivo || isAdmSalaArthur) {
       return row;
     }
     if (perm !== 'PONTO_FOCAL') {
       throw new ForbiddenException('Sem permissão para esta operação.');
     }
-    const divUser = (usuario as any).divisaoId as string | undefined;
     if (!divSala || !divUser || divUser !== divSala) {
       throw new ForbiddenException(
         'Acesso restrito ao ponto focal da Sala Arthur Saboya.',
@@ -795,9 +798,12 @@ export class AgendamentosService {
     usuario: Usuario,
   ): Promise<AgendamentoResponseDTO> {
     const s = await this.assertSolicitacaoPortalArthurSaboya(id, usuario);
-    if (s.status !== StatusSolicitacaoPreProjeto.AGUARDANDO_DATA) {
+    if (
+      s.status !== StatusSolicitacaoPreProjeto.SOLICITADO &&
+      s.status !== StatusSolicitacaoPreProjeto.AGUARDANDO_DATA
+    ) {
       throw new BadRequestException(
-        'Só é possível registrar agendamento quando o status for Aguardando data.',
+        'Só é possível registrar agendamento a partir de Solicitado ou Aguardando data (não após solucionado).',
       );
     }
     if (s.agendamentoId) {
@@ -820,6 +826,28 @@ export class AgendamentosService {
     }
     const divisaoId =
       s.divisaoId ?? this.divisaoPreProjetosEnv() ?? undefined;
+    if (!divisaoId) {
+      throw new BadRequestException(
+        'Divisão da Sala Arthur Saboya não configurada para esta solicitação.',
+      );
+    }
+    const tecnicoArthur = await this.prisma.usuario.findUnique({
+      where: { id: dto.tecnicoId },
+      select: { id: true, permissao: true, status: true, divisaoId: true },
+    });
+    if (!tecnicoArthur || !tecnicoArthur.status) {
+      throw new BadRequestException('Técnico da Sala Arthur Saboya inválido.');
+    }
+    if (!this.usuarioPodeSerTecnicoAtribuido(tecnicoArthur)) {
+      throw new BadRequestException(
+        'Técnico da Sala Arthur Saboya deve ser técnico ou DEV com unidade.',
+      );
+    }
+    if (tecnicoArthur.divisaoId !== divisaoId) {
+      throw new BadRequestException(
+        'O técnico informado não pertence à divisão da Sala Arthur Saboya.',
+      );
+    }
     const processoTrim = s.protocolo.trim();
     const existente = await this.prisma.agendamento.findFirst({
       where: { processo: processoTrim, dataHora },
@@ -841,8 +869,9 @@ export class AgendamentosService {
           resumo: DUVIDA_PRE_PROJETO_RESUMO,
           tipoAgendamentoId: tipoId,
           coordenadoriaId: dto.coordenadoriaId,
-          divisaoId: divisaoId ?? null,
-          status: StatusAgendamento.AGENDADO,
+          divisaoId,
+          tecnicoId: dto.tecnicoId,
+          status: StatusAgendamento.SOLICITADO,
           importado: false,
         },
         include: {

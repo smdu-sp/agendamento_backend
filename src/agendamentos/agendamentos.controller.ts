@@ -76,8 +76,12 @@ export class AgendamentosController {
     const s = status?.trim().toUpperCase();
     if (s === 'SOLICITADO') {
       statusFiltro = StatusSolicitacaoPreProjeto.SOLICITADO;
+    } else if (s === 'RESPONDIDO') {
+      statusFiltro = StatusSolicitacaoPreProjeto.RESPONDIDO;
     } else if (s === 'AGUARDANDO_DATA') {
       statusFiltro = StatusSolicitacaoPreProjeto.AGUARDANDO_DATA;
+    } else if (s === 'AGENDAMENTO_CRIADO') {
+      statusFiltro = StatusSolicitacaoPreProjeto.AGENDAMENTO_CRIADO;
     }
     return this.agendamentosService.buscarSolicitacoesPreProjetosPortalArthurSaboya(
       +(pagina ?? 1) || 1,
@@ -130,7 +134,7 @@ export class AgendamentosController {
   )
   @ApiOperation({
     summary:
-      'Portal Arthur Saboya — registra agendamento na coordenadoria a partir da solicitação (status → Agendamento criado).',
+      'Portal Arthur Saboya — envia para a coordenadoria com data/hora e técnico da Sala Arthur (status da solicitação → Agendamento criado).',
   })
   portalArthurSaboyaCriarAgendamentoDaSolicitacao(
     @Param('id', ParseUUIDPipe) id: string,

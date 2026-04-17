@@ -9,4 +9,10 @@ export class CriarAgendamentoSolicitacaoPreProjetoPortalDto {
   @ApiProperty({ description: 'Coordenadoria de destino' })
   @IsUUID()
   coordenadoriaId: string;
+
+  @ApiProperty({
+    description: 'Técnico da divisão Arthur Saboya que fará a comunicação',
+  })
+  @IsUUID()
+  tecnicoId: string;
 }
