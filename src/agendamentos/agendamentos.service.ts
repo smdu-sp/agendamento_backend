@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { JwtService } from '@nestjs/jwt';
 import {
   BadRequestException,
   ForbiddenException,
@@ -15,6 +16,10 @@ import {
   SolicitacaoPreProjetoListItemDto,
   SolicitacaoPreProjetoPaginadoDto,
 } from './dto/solicitacao-pre-projeto-paginado.dto';
+import {
+  SolicitacaoPreProjetoDetalheComMensagensDto,
+  SolicitacaoPreProjetoMensagemDto,
+} from './dto/solicitacao-pre-projeto-detalhe.dto';
 import { CriarAgendamentoSolicitacaoPreProjetoPortalDto } from './dto/criar-agendamento-solicitacao-pre-projeto-portal.dto';
 import {
   DUVIDA_PRE_PROJETO_RESUMO,
@@ -26,6 +31,7 @@ import {
 import { PrismaService } from 'src/prisma/prisma.service';
 import {
   Agendamento,
+  AutorMensagemPreProjetoArthurSaboya,
   Prisma,
   StatusAgendamento,
   StatusSolicitacaoPreProjeto,
@@ -47,6 +53,7 @@ import {
 import { UsuariosService } from 'src/usuarios/usuarios.service';
 import { CoordenadoriasService } from 'src/coordenadorias/coordenadorias.service';
 import { instanteCivilSaoPaulo } from './sao-paulo-datetime.util';
+import type { MunicipeJwtPayload } from 'src/auth/guards/municipe-jwt-auth.guard';
 
 @Injectable()
 export class AgendamentosService {
@@ -60,6 +67,7 @@ export class AgendamentosService {
     private app: AppService,
     private usuariosService: UsuariosService,
     private coordenadoriasService: CoordenadoriasService,
+    private jwtService: JwtService,
   ) {}
 
   /** UUID da coordenadoria responsável pelas solicitações públicas de pré-projetos (env). */
@@ -390,9 +398,12 @@ export class AgendamentosService {
   /**
    * Cadastro público alinhado ao formulário `Arthur Saboya/app/pre-projetos/page.tsx`.
    * Persiste em `solicitacoes_pre_projeto_arthur_saboya` (não em `agendamentos`).
+   * Se `Authorization: Bearer` for JWT de munícipe válido e o e-mail coincidir com o formulário,
+   * vincula `municipeContaId` para consulta no portal.
    */
   async criarSolicitacaoPreProjetos(
     dto: CreateAgendamentoPreProjetoDto,
+    authorization?: string,
   ): Promise<PreProjetoSolicitacaoResponseDto> {
     const formacaoTexto =
       dto.formacao === 'outra'
@@ -410,32 +421,251 @@ export class AgendamentosService {
     const coordPreProjetos = await this.resolverCoordenadoriaIdPreProjetos();
     const divisaoPreProjetos = await this.resolverDivisaoIdPreProjetos();
 
+    const emailForm = dto.email.trim().toLowerCase();
+    const municipeContaId = await this.resolverMunicipeContaIdParaAbertura(
+      authorization,
+      emailForm,
+    );
+
     const id = randomUUID();
     const protocolo = AgendamentosService.protocoloPreProjetoDeId(id);
 
-    const row = await this.prisma.solicitacaoPreProjetoArthurSaboya.create({
-      data: {
-        id,
-        protocolo,
-        nome: this.padronizarNome(dto.nome.trim()) || dto.nome.trim(),
-        email: dto.email.trim().toLowerCase(),
-        formacaoValor: dto.formacao,
-        formacaoOutro:
-          dto.formacao === 'outra' ? (dto.formacaoOutro ?? '').trim() : null,
-        formacaoTexto,
-        naturezaValor: dto.naturezaDuvida,
-        naturezaOutro:
-          dto.naturezaDuvida === 'outra'
-            ? (dto.naturezaOutro ?? '').trim()
-            : null,
-        naturezaTexto,
-        duvida: dto.descricao.trim(),
-        ...(coordPreProjetos ? { coordenadoriaId: coordPreProjetos } : {}),
-        ...(divisaoPreProjetos ? { divisaoId: divisaoPreProjetos } : {}),
-      },
+    const row = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.solicitacaoPreProjetoArthurSaboya.create({
+        data: {
+          id,
+          protocolo,
+          nome: this.padronizarNome(dto.nome.trim()) || dto.nome.trim(),
+          email: emailForm,
+          formacaoValor: dto.formacao,
+          formacaoOutro:
+            dto.formacao === 'outra' ? (dto.formacaoOutro ?? '').trim() : null,
+          formacaoTexto,
+          naturezaValor: dto.naturezaDuvida,
+          naturezaOutro:
+            dto.naturezaDuvida === 'outra'
+              ? (dto.naturezaOutro ?? '').trim()
+              : null,
+          naturezaTexto,
+          duvida: dto.descricao.trim(),
+          ...(coordPreProjetos ? { coordenadoriaId: coordPreProjetos } : {}),
+          ...(divisaoPreProjetos ? { divisaoId: divisaoPreProjetos } : {}),
+          ...(municipeContaId ? { municipeContaId } : {}),
+        },
+      });
+      await tx.solicitacaoPreProjetoArthurSaboyaMensagem.create({
+        data: {
+          solicitacaoId: created.id,
+          autor: AutorMensagemPreProjetoArthurSaboya.MUNICIPE,
+          corpo: created.duvida,
+          municipeContaId,
+        },
+      });
+      return created;
     });
 
     return { id: row.id, protocolo: row.protocolo };
+  }
+
+  private async resolverMunicipeContaIdParaAbertura(
+    authorization: string | undefined,
+    emailFormulario: string,
+  ): Promise<string | null> {
+    const tokenInfo = this.verificarTokenMunicipeOpcional(authorization);
+    if (!tokenInfo) return null;
+    if (tokenInfo.email !== emailFormulario) {
+      throw new BadRequestException(
+        'O e-mail do formulário deve ser o mesmo da conta logada no portal.',
+      );
+    }
+    const conta = await this.prisma.municipeConta.findUnique({
+      where: { id: tokenInfo.sub },
+      select: { id: true, email: true, status: true },
+    });
+    if (!conta?.status || conta.email !== emailFormulario) {
+      throw new BadRequestException('Sessão de munícipe inválida.');
+    }
+    return conta.id;
+  }
+
+  private verificarTokenMunicipeOpcional(
+    authorization?: string,
+  ): { sub: string; email: string } | null {
+    if (!authorization?.trim().toLowerCase().startsWith('bearer ')) {
+      return null;
+    }
+    const token = authorization.slice(7).trim();
+    if (!token) return null;
+    try {
+      const payload = this.jwtService.verify<{
+        sub?: string;
+        email?: string;
+        escopo?: string;
+      }>(token, { secret: process.env.JWT_SECRET });
+      if (payload?.escopo !== 'MUNICIPE' || !payload.sub || !payload.email) {
+        return null;
+      }
+      return {
+        sub: payload.sub,
+        email: String(payload.email).trim().toLowerCase(),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private escopoWhereMunicipe(m: MunicipeJwtPayload) {
+    return {
+      OR: [
+        { municipeContaId: m.id },
+        { AND: [{ municipeContaId: null }, { email: m.email }] },
+      ],
+    } satisfies Prisma.SolicitacaoPreProjetoArthurSaboyaWhereInput;
+  }
+
+  async listarMinhasSolicitacoesPreProjetosMunicipe(
+    municipe: MunicipeJwtPayload,
+    pagina: number,
+    limite: number,
+  ): Promise<SolicitacaoPreProjetoPaginadoDto> {
+    return this.listarSolicitacoesPreProjetoComWhere(
+      pagina,
+      limite,
+      undefined,
+      this.escopoWhereMunicipe(municipe),
+    );
+  }
+
+  async obterSolicitacaoDetalheMunicipe(
+    id: string,
+    municipe: MunicipeJwtPayload,
+  ): Promise<SolicitacaoPreProjetoDetalheComMensagensDto> {
+    const row = await this.prisma.solicitacaoPreProjetoArthurSaboya.findFirst({
+      where: {
+        AND: [{ id }, this.escopoWhereMunicipe(municipe)],
+      },
+      select: this.solicitacaoPortalDetalheSelect(),
+    });
+    if (!row) {
+      throw new NotFoundException('Solicitação não encontrada.');
+    }
+    return this.mapSolicitacaoDetalheComMensagens(row);
+  }
+
+  async adicionarMensagemMunicipeNaSolicitacao(
+    id: string,
+    municipe: MunicipeJwtPayload,
+    texto: string,
+  ): Promise<SolicitacaoPreProjetoDetalheComMensagensDto> {
+    const corpo = texto.trim();
+    if (!corpo) {
+      throw new BadRequestException('Mensagem vazia.');
+    }
+    const existe = await this.prisma.solicitacaoPreProjetoArthurSaboya.findFirst(
+      {
+        where: {
+          AND: [{ id }, this.escopoWhereMunicipe(municipe)],
+        },
+        select: { id: true },
+      },
+    );
+    if (!existe) {
+      throw new NotFoundException('Solicitação não encontrada.');
+    }
+    await this.prisma.solicitacaoPreProjetoArthurSaboyaMensagem.create({
+      data: {
+        solicitacaoId: id,
+        autor: AutorMensagemPreProjetoArthurSaboya.MUNICIPE,
+        corpo,
+        municipeContaId: municipe.id,
+      },
+    });
+    return this.obterSolicitacaoDetalheMunicipe(id, municipe);
+  }
+
+  async obterSolicitacaoPortalDetalheComMensagens(
+    refUuidOuProtocolo: string,
+    usuario: Usuario,
+  ): Promise<SolicitacaoPreProjetoDetalheComMensagensDto> {
+    const s = await this.assertSolicitacaoPortalArthurSaboya(refUuidOuProtocolo, usuario);
+    const row = await this.prisma.solicitacaoPreProjetoArthurSaboya.findUniqueOrThrow(
+      {
+        where: { id: s.id },
+        select: this.solicitacaoPortalDetalheSelect(),
+      },
+    );
+    return this.mapSolicitacaoDetalheComMensagens(row);
+  }
+
+  async adicionarMensagemPortalArthurSaboya(
+    refUuidOuProtocolo: string,
+    texto: string,
+    usuario: Usuario,
+  ): Promise<SolicitacaoPreProjetoDetalheComMensagensDto> {
+    const s = await this.assertSolicitacaoPortalArthurSaboya(refUuidOuProtocolo, usuario);
+    const corpo = texto.trim();
+    if (!corpo) {
+      throw new BadRequestException('Mensagem vazia.');
+    }
+    await this.prisma.solicitacaoPreProjetoArthurSaboyaMensagem.create({
+      data: {
+        solicitacaoId: s.id,
+        autor: AutorMensagemPreProjetoArthurSaboya.PONTO_FOCAL,
+        corpo,
+        usuarioId: usuario.id,
+      },
+    });
+    return this.obterSolicitacaoPortalDetalheComMensagens(refUuidOuProtocolo, usuario);
+  }
+
+  private solicitacaoPortalDetalheSelect(): Prisma.SolicitacaoPreProjetoArthurSaboyaSelect {
+    return {
+      ...this.solicitacaoPortalListSelect(),
+      mensagens: {
+        orderBy: { criadoEm: 'asc' },
+        select: {
+          id: true,
+          autor: true,
+          corpo: true,
+          criadoEm: true,
+          usuario: { select: { nome: true } },
+          municipeConta: { select: { nome: true } },
+        },
+      },
+    };
+  }
+
+  private mapSolicitacaoDetalheComMensagens(
+    r: unknown,
+  ): SolicitacaoPreProjetoDetalheComMensagensDto {
+    const full = r as {
+      mensagens: Array<{
+        id: string;
+        autor: AutorMensagemPreProjetoArthurSaboya;
+        corpo: string;
+        criadoEm: Date;
+        usuario: { nome: string } | null;
+        municipeConta: { nome: string } | null;
+      }>;
+    } & Record<string, unknown>;
+    const { mensagens, ...rest } = full;
+    const base = this.mapSolicitacaoRowToListItem(rest);
+    const nomeSolic = base.nome;
+    const mensagensDto: SolicitacaoPreProjetoMensagemDto[] = mensagens.map(
+      (m) => ({
+        id: m.id,
+        autor: m.autor,
+        corpo: m.corpo,
+        criadoEm: m.criadoEm,
+        nomeRemetente:
+          m.autor === AutorMensagemPreProjetoArthurSaboya.SISTEMA
+            ? 'Sistema'
+            : m.autor === AutorMensagemPreProjetoArthurSaboya.PONTO_FOCAL
+              ? m.usuario?.nome ?? 'Equipe'
+              : m.municipeConta?.nome ?? nomeSolic,
+      }),
+    );
+    return { ...base, mensagens: mensagensDto };
   }
 
   /**
@@ -695,13 +925,42 @@ export class AgendamentosService {
     };
   }
 
+  /** Id da solicitação (UUID) — se não casar, trata `ref` como `protocolo` (ex.: PP-AB12CD34). */
+  private static readonly REF_UUID_SOLICITACAO =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  /**
+   * Resolve referência da URL (UUID da solicitação ou `protocolo` único) para o id interno.
+   */
+  private async resolverIdSolicitacaoPreProjetoPortalRef(
+    ref: string,
+  ): Promise<string> {
+    const raw = ref?.trim() ?? '';
+    if (!raw) {
+      throw new BadRequestException('Identificador do chamado inválido.');
+    }
+    if (AgendamentosService.REF_UUID_SOLICITACAO.test(raw)) {
+      return raw;
+    }
+    const protocolo = raw.toUpperCase();
+    const row = await this.prisma.solicitacaoPreProjetoArthurSaboya.findUnique({
+      where: { protocolo },
+      select: { id: true },
+    });
+    if (!row) {
+      throw new NotFoundException('Solicitação não encontrada.');
+    }
+    return row.id;
+  }
+
   /**
    * Garante que a solicitação existe e que o usuário pode operá-la no portal Arthur Saboya.
    */
   private async assertSolicitacaoPortalArthurSaboya(
-    id: string,
+    refUuidOuProtocolo: string,
     usuario: Usuario,
   ) {
+    const id = await this.resolverIdSolicitacaoPreProjetoPortalRef(refUuidOuProtocolo);
     const row = await this.prisma.solicitacaoPreProjetoArthurSaboya.findUnique({
       where: { id },
       select: {
@@ -748,31 +1007,40 @@ export class AgendamentosService {
   }
 
   async portalArthurSaboyaConfirmarRespostaEnviada(
-    id: string,
+    refUuidOuProtocolo: string,
     usuario: Usuario,
   ): Promise<SolicitacaoPreProjetoListItemDto> {
-    const s = await this.assertSolicitacaoPortalArthurSaboya(id, usuario);
+    const s = await this.assertSolicitacaoPortalArthurSaboya(refUuidOuProtocolo, usuario);
     if (s.status !== StatusSolicitacaoPreProjeto.SOLICITADO) {
       throw new BadRequestException(
         'Só é possível confirmar resposta para solicitações com status Solicitado.',
       );
     }
-    await this.prisma.solicitacaoPreProjetoArthurSaboya.update({
-      where: { id },
-      data: { status: StatusSolicitacaoPreProjeto.RESPONDIDO },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.solicitacaoPreProjetoArthurSaboya.update({
+        where: { id: s.id },
+        data: { status: StatusSolicitacaoPreProjeto.RESPONDIDO },
+      });
+      await tx.solicitacaoPreProjetoArthurSaboyaMensagem.create({
+        data: {
+          solicitacaoId: s.id,
+          autor: AutorMensagemPreProjetoArthurSaboya.SISTEMA,
+          corpo: 'Status do chamado alterado para Solucionado.',
+        },
+      });
     });
     const sel = this.solicitacaoPortalListSelect();
     const r = await this.prisma.solicitacaoPreProjetoArthurSaboya.findUniqueOrThrow(
-      { where: { id }, select: sel },
+      { where: { id: s.id }, select: sel },
     );
     return this.mapSolicitacaoRowToListItem(r);
   }
 
   async portalArthurSaboyaMarcarAguardandoData(
-    id: string,
+    refUuidOuProtocolo: string,
     usuario: Usuario,
   ): Promise<SolicitacaoPreProjetoListItemDto> {
-    const s = await this.assertSolicitacaoPortalArthurSaboya(id, usuario);
+    const s = await this.assertSolicitacaoPortalArthurSaboya(refUuidOuProtocolo, usuario);
     if (
       s.status !== StatusSolicitacaoPreProjeto.SOLICITADO &&
       s.status !== StatusSolicitacaoPreProjeto.RESPONDIDO
@@ -781,23 +1049,33 @@ export class AgendamentosService {
         'Só é possível marcar como aguardando data a partir de Solicitado ou Respondido.',
       );
     }
-    await this.prisma.solicitacaoPreProjetoArthurSaboya.update({
-      where: { id },
-      data: { status: StatusSolicitacaoPreProjeto.AGUARDANDO_DATA },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.solicitacaoPreProjetoArthurSaboya.update({
+        where: { id: s.id },
+        data: { status: StatusSolicitacaoPreProjeto.AGUARDANDO_DATA },
+      });
+      await tx.solicitacaoPreProjetoArthurSaboyaMensagem.create({
+        data: {
+          solicitacaoId: s.id,
+          autor: AutorMensagemPreProjetoArthurSaboya.SISTEMA,
+          corpo:
+            'Status do chamado alterado para Aguardando data/hora para envio à coordenadoria.',
+        },
+      });
     });
     const sel = this.solicitacaoPortalListSelect();
     const r = await this.prisma.solicitacaoPreProjetoArthurSaboya.findUniqueOrThrow(
-      { where: { id }, select: sel },
+      { where: { id: s.id }, select: sel },
     );
     return this.mapSolicitacaoRowToListItem(r);
   }
 
   async portalArthurSaboyaCriarAgendamentoDaSolicitacao(
-    id: string,
+    refUuidOuProtocolo: string,
     dto: CriarAgendamentoSolicitacaoPreProjetoPortalDto,
     usuario: Usuario,
   ): Promise<AgendamentoResponseDTO> {
-    const s = await this.assertSolicitacaoPortalArthurSaboya(id, usuario);
+    const s = await this.assertSolicitacaoPortalArthurSaboya(refUuidOuProtocolo, usuario);
     if (
       s.status !== StatusSolicitacaoPreProjeto.SOLICITADO &&
       s.status !== StatusSolicitacaoPreProjeto.AGUARDANDO_DATA
@@ -889,10 +1167,18 @@ export class AgendamentosService {
         },
       });
       await tx.solicitacaoPreProjetoArthurSaboya.update({
-        where: { id },
+        where: { id: s.id },
         data: {
           agendamentoId: created.id,
           status: StatusSolicitacaoPreProjeto.AGENDAMENTO_CRIADO,
+        },
+      });
+      await tx.solicitacaoPreProjetoArthurSaboyaMensagem.create({
+        data: {
+          solicitacaoId: s.id,
+          autor: AutorMensagemPreProjetoArthurSaboya.SISTEMA,
+          corpo:
+            'Agendamento registrado e enviado à coordenadoria (com data, técnico e unidade definidos no sistema).',
         },
       });
       return created;

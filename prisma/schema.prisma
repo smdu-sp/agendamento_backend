@@ -26,6 +26,7 @@ model Usuario {
   divisao                Divisao?                @relation(fields: [divisaoId], references: [id], onDelete: SetNull)
   logImportacoesPlanilha LogImportacaoPlanilha[]
   logImportacoesOutlook  LogImportacaoOutlook[]
+  mensagensPreProjetoArthurSaboya SolicitacaoPreProjetoArthurSaboyaMensagem[]
 
   @@map("usuarios")
 }
@@ -146,13 +147,43 @@ model SolicitacaoPreProjetoArthurSaboya {
   coordenadoriaId String?
   divisaoId       String?
 
+  municipeContaId String?
+  municipeConta   MunicipeConta? @relation(fields: [municipeContaId], references: [id], onDelete: SetNull)
+
   agendamentoId String? @unique
   agendamento   Agendamento? @relation(fields: [agendamentoId], references: [id], onDelete: SetNull)
 
   coordenadoria Coordenadoria? @relation(fields: [coordenadoriaId], references: [id], onDelete: SetNull)
   divisao       Divisao?       @relation(fields: [divisaoId], references: [id], onDelete: SetNull)
 
+  mensagens SolicitacaoPreProjetoArthurSaboyaMensagem[]
+
   @@map("solicitacoes_pre_projeto_arthur_saboya")
+}
+
+/// Mensagens do “chamado” (estilo GLPI): munícipe, ponto focal ou sistema.
+model SolicitacaoPreProjetoArthurSaboyaMensagem {
+  id              String                         @id @default(uuid())
+  solicitacaoId   String
+  autor           AutorMensagemPreProjetoArthurSaboya
+  corpo           String                         @db.Text
+  criadoEm        DateTime                       @default(now())
+
+  usuarioId       String?
+  usuario         Usuario?       @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+  municipeContaId String?
+  municipeConta   MunicipeConta? @relation(fields: [municipeContaId], references: [id], onDelete: SetNull)
+
+  solicitacao SolicitacaoPreProjetoArthurSaboya @relation(fields: [solicitacaoId], references: [id], onDelete: Cascade)
+
+  @@index([solicitacaoId])
+  @@map("solicitacoes_pre_projeto_arthur_saboya_mensagens")
+}
+
+enum AutorMensagemPreProjetoArthurSaboya {
+  MUNICIPE
+  PONTO_FOCAL
+  SISTEMA
 }
 
 enum Permissao {
@@ -212,6 +243,9 @@ model MunicipeConta {
   criadoEm           DateTime                     @default(now()) @map("criado_em")
   atualizadoEm       DateTime                     @default(now()) @updatedAt @map("atualizado_em")
   tokensRedefinicao  MunicipeTokenRedefinicaoSenha[]
+
+  solicitacoesPreProjetoArthurSaboya SolicitacaoPreProjetoArthurSaboya[]
+  mensagensPreProjetoArthurSaboya    SolicitacaoPreProjetoArthurSaboyaMensagem[]
 
   @@map("municipes_contas")
 }

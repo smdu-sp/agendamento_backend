@@ -13,6 +13,8 @@ import {
   MaxFileSizeValidator,
   FileTypeValidator,
   ParseUUIDPipe,
+  Headers,
+  UseGuards,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AgendamentosService } from './agendamentos.service';
@@ -22,10 +24,14 @@ import { UpdateAgendamentoDto } from './dto/update-agendamento.dto';
 import { PreProjetoSolicitacaoResponseDto } from './dto/pre-projeto-solicitacao-response.dto';
 import { SolicitacaoPreProjetoPaginadoDto } from './dto/solicitacao-pre-projeto-paginado.dto';
 import { CriarAgendamentoSolicitacaoPreProjetoPortalDto } from './dto/criar-agendamento-solicitacao-pre-projeto-portal.dto';
+import { CriarMensagemSolicitacaoPreProjetoDto } from './dto/criar-mensagem-solicitacao-pre-projeto.dto';
 import { StatusSolicitacaoPreProjeto } from '@prisma/client';
 import { Permissoes } from 'src/auth/decorators/permissoes.decorator';
 import { IsPublic } from 'src/auth/decorators/is-public.decorator';
 import { UsuarioAtual } from 'src/auth/decorators/usuario-atual.decorator';
+import { MunicipeAtual } from 'src/auth/decorators/municipe-atual.decorator';
+import { MunicipeJwtAuthGuard } from 'src/auth/guards/municipe-jwt-auth.guard';
+import type { MunicipeJwtPayload } from 'src/auth/guards/municipe-jwt-auth.guard';
 import { Usuario } from '@prisma/client';
 import {
   ApiBearerAuth,
@@ -55,8 +61,63 @@ export class AgendamentosController {
   })
   criarSolicitacaoPreProjetos(
     @Body() dto: CreateAgendamentoPreProjetoDto,
+    @Headers('authorization') authorization?: string,
   ): Promise<PreProjetoSolicitacaoResponseDto> {
-    return this.agendamentosService.criarSolicitacaoPreProjetos(dto);
+    return this.agendamentosService.criarSolicitacaoPreProjetos(dto, authorization);
+  }
+
+  @IsPublic()
+  @UseGuards(MunicipeJwtAuthGuard)
+  @ApiBearerAuth()
+  @Get('municipes/pre-projetos-chamados')
+  @ApiOperation({
+    summary:
+      'Portal munícipe — lista chamados de pré-projetos (Arthur Saboya) vinculados à conta ou ao e-mail.',
+  })
+  listarChamadosPreProjetosMunicipe(
+    @MunicipeAtual() municipe: MunicipeJwtPayload,
+    @Query('pagina') pagina?: string,
+    @Query('limite') limite?: string,
+  ) {
+    return this.agendamentosService.listarMinhasSolicitacoesPreProjetosMunicipe(
+      municipe,
+      +(pagina ?? 1) || 1,
+      +(limite ?? 10) || 10,
+    );
+  }
+
+  @IsPublic()
+  @UseGuards(MunicipeJwtAuthGuard)
+  @ApiBearerAuth()
+  @Get('municipes/pre-projetos-chamados/:id')
+  @ApiOperation({
+    summary:
+      'Portal munícipe — detalhe do chamado com histórico de mensagens (estilo GLPI).',
+  })
+  obterChamadoPreProjetosMunicipe(
+    @Param('id', ParseUUIDPipe) id: string,
+    @MunicipeAtual() municipe: MunicipeJwtPayload,
+  ) {
+    return this.agendamentosService.obterSolicitacaoDetalheMunicipe(id, municipe);
+  }
+
+  @IsPublic()
+  @UseGuards(MunicipeJwtAuthGuard)
+  @ApiBearerAuth()
+  @Post('municipes/pre-projetos-chamados/:id/mensagens')
+  @ApiOperation({
+    summary: 'Portal munícipe — envia nova mensagem no chamado.',
+  })
+  enviarMensagemChamadoPreProjetosMunicipe(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CriarMensagemSolicitacaoPreProjetoDto,
+    @MunicipeAtual() municipe: MunicipeJwtPayload,
+  ) {
+    return this.agendamentosService.adicionarMensagemMunicipeNaSolicitacao(
+      id,
+      municipe,
+      dto.texto,
+    );
   }
 
   @Permissoes('ADM', 'DEV', 'PONTO_FOCAL')
@@ -93,6 +154,39 @@ export class AgendamentosController {
   }
 
   @Permissoes('ADM', 'DEV', 'PONTO_FOCAL')
+  @Get('solicitacoes-pre-projetos/arthur-saboya/portal/:id')
+  @ApiOperation({
+    summary:
+      'Portal Arthur Saboya — detalhe do chamado com mensagens (histórico GLPI). Parâmetro :id = UUID ou protocolo (ex.: PP-AB12CD34).',
+  })
+  obterSolicitacaoPortalArthurSaboyaDetalhe(
+    @Param('id') id: string,
+    @UsuarioAtual() usuario: Usuario,
+  ) {
+    return this.agendamentosService.obterSolicitacaoPortalDetalheComMensagens(
+      id,
+      usuario,
+    );
+  }
+
+  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL')
+  @Post('solicitacoes-pre-projetos/arthur-saboya/portal/:id/mensagens')
+  @ApiOperation({
+    summary: 'Portal Arthur Saboya — envia mensagem como ponto focal.',
+  })
+  enviarMensagemPortalArthurSaboya(
+    @Param('id') id: string,
+    @Body() dto: CriarMensagemSolicitacaoPreProjetoDto,
+    @UsuarioAtual() usuario: Usuario,
+  ) {
+    return this.agendamentosService.adicionarMensagemPortalArthurSaboya(
+      id,
+      dto.texto,
+      usuario,
+    );
+  }
+
+  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL')
   @Post(
     'solicitacoes-pre-projetos/arthur-saboya/portal/:id/confirmar-resposta-enviada',
   )
@@ -101,7 +195,7 @@ export class AgendamentosController {
       'Portal Arthur Saboya — confirma que a dúvida foi respondida por e-mail (status → Respondido).',
   })
   portalArthurSaboyaConfirmarRespostaEnviada(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id') id: string,
     @UsuarioAtual() usuario: Usuario,
   ) {
     return this.agendamentosService.portalArthurSaboyaConfirmarRespostaEnviada(
@@ -119,7 +213,7 @@ export class AgendamentosController {
       'Portal Arthur Saboya — marca solicitação como aguardando data/hora do munícipe.',
   })
   portalArthurSaboyaMarcarAguardandoData(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id') id: string,
     @UsuarioAtual() usuario: Usuario,
   ) {
     return this.agendamentosService.portalArthurSaboyaMarcarAguardandoData(
@@ -137,7 +231,7 @@ export class AgendamentosController {
       'Portal Arthur Saboya — envia para a coordenadoria com data/hora e técnico da Sala Arthur (status da solicitação → Agendamento criado).',
   })
   portalArthurSaboyaCriarAgendamentoDaSolicitacao(
-    @Param('id', ParseUUIDPipe) id: string,
+    @Param('id') id: string,
     @Body() dto: CriarAgendamentoSolicitacaoPreProjetoPortalDto,
     @UsuarioAtual() usuario: Usuario,
   ) {
