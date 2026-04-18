@@ -841,10 +841,23 @@ export class AgendamentosService {
       coordenadoriaId: true,
       divisaoId: true,
       divisao: {
-        select: { coordenadoria: { select: { email: true } } },
+        select: {
+          coordenadoria: {
+            select: { email: true, sigla: true, nome: true },
+          },
+        },
       },
-      coordenadoria: { select: { email: true } },
+      coordenadoria: { select: { email: true, sigla: true, nome: true } },
     };
+  }
+
+  private static formatCoordenadoriaLabel(
+    c: { sigla: string; nome?: string | null } | null | undefined,
+  ): string | null {
+    if (!c?.sigla?.trim()) return null;
+    const sigla = c.sigla.trim();
+    const nome = c.nome?.trim();
+    return nome ? `${sigla} — ${nome}` : sigla;
   }
 
   /**
@@ -853,17 +866,35 @@ export class AgendamentosService {
    */
   private mapSolicitacaoRowToListItem(r: unknown): SolicitacaoPreProjetoListItemDto {
     const row = r as {
-      divisao?: { coordenadoria?: { email?: string | null } | null } | null;
-      coordenadoria?: { email?: string | null } | null;
+      divisao?: {
+        coordenadoria?: {
+          email?: string | null;
+          sigla: string;
+          nome?: string | null;
+        } | null;
+      } | null;
+      coordenadoria?: {
+        email?: string | null;
+        sigla: string;
+        nome?: string | null;
+      } | null;
       agendamento?: unknown;
-    } & Omit<SolicitacaoPreProjetoListItemDto, 'emailContatoDivisao'>;
+    } & Omit<
+      SolicitacaoPreProjetoListItemDto,
+      'emailContatoDivisao' | 'coordenadoriaTexto'
+    >;
     const { divisao, coordenadoria, agendamento: _ag, ...rest } = row;
+    const coordenadoriaTexto =
+      AgendamentosService.formatCoordenadoriaLabel(coordenadoria) ??
+      AgendamentosService.formatCoordenadoriaLabel(divisao?.coordenadoria) ??
+      null;
     return {
       ...rest,
       emailContatoDivisao:
         divisao?.coordenadoria?.email?.trim() ||
         coordenadoria?.email?.trim() ||
         null,
+      coordenadoriaTexto,
     };
   }
 

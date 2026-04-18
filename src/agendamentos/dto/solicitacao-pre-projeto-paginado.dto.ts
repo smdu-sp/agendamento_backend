@@ -53,6 +53,10 @@ export class SolicitacaoPreProjetoListItemDto {
 
   @ApiPropertyOptional()
   divisaoId?: string | null;
+
+  /** Rótulo para exibição: sigla e nome da coordenadoria da solicitação ou da divisão. */
+  @ApiPropertyOptional()
+  coordenadoriaTexto?: string | null;
 }
 
 export class SolicitacaoPreProjetoPaginadoDto {
