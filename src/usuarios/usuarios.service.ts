@@ -15,6 +15,7 @@ import { $Enums, Permissao, Usuario } from '@prisma/client';
 type UsuarioLogadoContext = Pick<Usuario, 'permissao' | 'divisaoId'>;
 import { AppService } from 'src/app.service';
 import { Client as LdapClient } from 'ldapts';
+import { SguService } from 'src/prisma/sgu.service';
 import {
   BuscarNovoResponseDTO,
   UsuarioAutorizadoResponseDTO,
@@ -28,7 +29,65 @@ export class UsuariosService {
   constructor(
     private prisma: PrismaService,
     private app: AppService,
+    private sgu: SguService,
   ) {}
+
+  private normalizarSigla(valor: string): string {
+    return String(valor || '')
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, '');
+  }
+
+  private async inferirDivisaoIdPorLoginNoSgu(
+    login: string | undefined,
+  ): Promise<string | undefined> {
+    const loginLimpo = String(login || '')
+      .trim()
+      .toLowerCase();
+    if (!loginLimpo) return undefined;
+
+    const siglaSgu = await this.sgu.buscarSiglaUnidadePorUsuarioRede(loginLimpo);
+    if (!siglaSgu) return undefined;
+
+    const siglaNormalizada = this.normalizarSigla(siglaSgu);
+    if (!siglaNormalizada) return undefined;
+
+    const divisoes = await this.prisma.divisao.findMany({
+      where: { status: true },
+      select: { id: true, sigla: true },
+    });
+    const match = divisoes.find(
+      (d) => this.normalizarSigla(d.sigla) === siglaNormalizada,
+    );
+    return match?.id;
+  }
+
+  async vincularDivisaoTecnicoPorLoginSeDisponivel(
+    login: string | undefined,
+  ): Promise<string | null> {
+    const loginLimpo = String(login || '')
+      .trim()
+      .toLowerCase();
+    if (!loginLimpo) return null;
+
+    const usuario = await this.prisma.usuario.findUnique({
+      where: { login: loginLimpo },
+      select: { id: true, permissao: true, divisaoId: true },
+    });
+    if (!usuario) return null;
+    if (usuario.divisaoId) return usuario.divisaoId;
+    if (usuario.permissao !== 'TEC' && usuario.permissao !== 'DEV') return null;
+
+    const divisaoIdInferida = await this.inferirDivisaoIdPorLoginNoSgu(loginLimpo);
+    if (!divisaoIdInferida) return null;
+
+    await this.prisma.usuario.update({
+      where: { id: usuario.id },
+      data: { divisaoId: divisaoIdInferida },
+    });
+    return divisaoIdInferida;
+  }
 
   validaPermissaoCriador(
     permissao: $Enums.Permissao,
@@ -175,6 +234,16 @@ export class UsuariosService {
     return lista;
   }
 
+  async buscarTecnicosArthurSaboya(
+    usuarioLogado?: UsuarioLogadoContext,
+  ): Promise<{ id: string; nome: string; login: string }[]> {
+    const divisaoArthur = process.env.DIVISAO_ID_PRE_PROJETOS?.trim();
+    if (!divisaoArthur) {
+      return [];
+    }
+    return this.buscarTecnicosPorDivisao(divisaoArthur, usuarioLogado);
+  }
+
   async criar(
     createUsuarioDto: CreateUsuarioDto,
     usuarioLogado: UsuarioLogadoContext,
@@ -196,8 +265,14 @@ export class UsuariosService {
       if (loguser) throw new ForbiddenException('Login já cadastrado.');
       throw new ForbiddenException('Email já cadastrado.');
     }
+    let { permissao } = createUsuarioDto;
+    permissao = this.validaPermissaoCriador(permissao, usuarioLogado.permissao);
+
     // Ponto Focal e Coordenador só podem criar usuários na sua divisão
     let divisaoId = createUsuarioDto.divisaoId;
+    if (!divisaoId && permissao === 'TEC') {
+      divisaoId = await this.inferirDivisaoIdPorLoginNoSgu(createUsuarioDto.login);
+    }
     if (
       usuarioLogado.permissao === 'PONTO_FOCAL' ||
       usuarioLogado.permissao === 'COORDENADOR'
@@ -209,8 +284,6 @@ export class UsuariosService {
       }
       divisaoId = usuarioLogado.divisaoId;
     }
-    let { permissao } = createUsuarioDto;
-    permissao = this.validaPermissaoCriador(permissao, usuarioLogado.permissao);
     const usuario: Usuario = await this.prisma.usuario.create({
       data: {
         ...createUsuarioDto,

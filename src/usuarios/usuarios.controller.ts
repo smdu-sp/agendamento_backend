@@ -91,6 +91,7 @@ export class UsuariosController {
     return this.usuariosService.buscarTecnicos();
   }
 
+  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
   @Get('buscar-tecnicos-por-coordenadoria/:coordenadoriaId')
   buscarTecnicosPorCoordenadoria(
     @Param('coordenadoriaId') coordenadoriaId: string,
@@ -98,12 +99,21 @@ export class UsuariosController {
     return this.usuariosService.buscarTecnicosPorCoordenadoria(coordenadoriaId);
   }
 
+  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
   @Get('buscar-tecnicos-por-divisao/:divisaoId')
   buscarTecnicosPorDivisao(
     @Param('divisaoId') divisaoId: string,
     @UsuarioAtual() usuario?: Usuario,
   ): Promise<{ id: string; nome: string; login: string }[]> {
     return this.usuariosService.buscarTecnicosPorDivisao(divisaoId, usuario);
+  }
+
+  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
+  @Get('buscar-tecnicos-arthur-saboya')
+  buscarTecnicosArthurSaboya(
+    @UsuarioAtual() usuario?: Usuario,
+  ): Promise<{ id: string; nome: string; login: string }[]> {
+    return this.usuariosService.buscarTecnicosArthurSaboya(usuario);
   }
 
   @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')

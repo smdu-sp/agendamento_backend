@@ -25,6 +25,7 @@ import { PreProjetoSolicitacaoResponseDto } from './dto/pre-projeto-solicitacao-
 import { SolicitacaoPreProjetoPaginadoDto } from './dto/solicitacao-pre-projeto-paginado.dto';
 import { CriarAgendamentoSolicitacaoPreProjetoPortalDto } from './dto/criar-agendamento-solicitacao-pre-projeto-portal.dto';
 import { CriarMensagemSolicitacaoPreProjetoDto } from './dto/criar-mensagem-solicitacao-pre-projeto.dto';
+import { AvaliarSolicitacaoPreProjetoDto } from './dto/avaliar-solicitacao-pre-projeto.dto';
 import { StatusSolicitacaoPreProjeto } from '@prisma/client';
 import { Permissoes } from 'src/auth/decorators/permissoes.decorator';
 import { IsPublic } from 'src/auth/decorators/is-public.decorator';
@@ -117,6 +118,45 @@ export class AgendamentosController {
       id,
       municipe,
       dto.texto,
+    );
+  }
+
+  @IsPublic()
+  @UseGuards(MunicipeJwtAuthGuard)
+  @ApiBearerAuth()
+  @Post('municipes/pre-projetos-chamados/:id/marcar-solucionado')
+  @ApiOperation({
+    summary:
+      'Portal munícipe — confirma resolução do atendimento e marca chamado como Solucionado.',
+  })
+  marcarChamadoPreProjetosMunicipeComoSolucionado(
+    @Param('id', ParseUUIDPipe) id: string,
+    @MunicipeAtual() municipe: MunicipeJwtPayload,
+  ) {
+    return this.agendamentosService.marcarSolicitacaoMunicipeComoSolucionada(
+      id,
+      municipe,
+    );
+  }
+
+  @IsPublic()
+  @UseGuards(MunicipeJwtAuthGuard)
+  @ApiBearerAuth()
+  @Post('municipes/pre-projetos-chamados/:id/avaliacao')
+  @ApiOperation({
+    summary:
+      'Portal munícipe — registra avaliação do atendimento após chamado solucionado (1 a 5 estrelas).',
+  })
+  avaliarChamadoPreProjetosMunicipe(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AvaliarSolicitacaoPreProjetoDto,
+    @MunicipeAtual() municipe: MunicipeJwtPayload,
+  ) {
+    return this.agendamentosService.avaliarSolicitacaoPreProjetoMunicipe(
+      id,
+      municipe,
+      dto.nota,
+      dto.comentario,
     );
   }
 

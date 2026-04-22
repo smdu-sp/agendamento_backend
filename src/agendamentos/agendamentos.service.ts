@@ -178,6 +178,9 @@ export class AgendamentosService {
       // Busca usuário existente pelo login (independente da permissão)
       const usuario = await this.usuariosService.buscarPorLogin(login);
       if (usuario) {
+        await this.usuariosService.vincularDivisaoTecnicoPorLoginSeDisponivel(
+          login,
+        );
         return usuario.id;
       }
 
@@ -224,6 +227,9 @@ export class AgendamentosService {
           );
           console.log(
             `Técnico ${dadosLDAP.nome} (${dadosLDAP.login}) criado automaticamente com permissão TEC`,
+          );
+          await this.usuariosService.vincularDivisaoTecnicoPorLoginSeDisponivel(
+            dadosLDAP.login,
           );
           return novoTecnico.id;
         } catch (error) {
@@ -304,6 +310,21 @@ export class AgendamentosService {
     const dataFim = new Date(dataHora);
     dataFim.setMinutes(dataFim.getMinutes() + duracao);
     return dataFim;
+  }
+
+  private formatarDataHoraSaoPaulo(data: Date): string {
+    const parts = new Intl.DateTimeFormat('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(data);
+    const byType = (type: string) =>
+      parts.find((p) => p.type === type)?.value ?? '';
+    return `${byType('day')}/${byType('month')}/${byType('year')} às ${byType('hour')}:${byType('minute')}`;
   }
 
   async criar(
@@ -566,11 +587,16 @@ export class AgendamentosService {
         where: {
           AND: [{ id }, this.escopoWhereMunicipe(municipe)],
         },
-        select: { id: true },
+        select: { id: true, status: true },
       },
     );
     if (!existe) {
       throw new NotFoundException('Solicitação não encontrada.');
+    }
+    if (existe.status === StatusSolicitacaoPreProjeto.RESPONDIDO) {
+      throw new BadRequestException(
+        'Este chamado já foi marcado como solucionado e não aceita novas mensagens.',
+      );
     }
     await this.prisma.solicitacaoPreProjetoArthurSaboyaMensagem.create({
       data: {
@@ -580,6 +606,97 @@ export class AgendamentosService {
         municipeContaId: municipe.id,
       },
     });
+    return this.obterSolicitacaoDetalheMunicipe(id, municipe);
+  }
+
+  async marcarSolicitacaoMunicipeComoSolucionada(
+    id: string,
+    municipe: MunicipeJwtPayload,
+  ): Promise<SolicitacaoPreProjetoDetalheComMensagensDto> {
+    const existe = await this.prisma.solicitacaoPreProjetoArthurSaboya.findFirst({
+      where: {
+        AND: [{ id }, this.escopoWhereMunicipe(municipe)],
+      },
+      select: { id: true, status: true },
+    });
+    if (!existe) {
+      throw new NotFoundException('Solicitação não encontrada.');
+    }
+    if (existe.status === StatusSolicitacaoPreProjeto.RESPONDIDO) {
+      return this.obterSolicitacaoDetalheMunicipe(id, municipe);
+    }
+
+    const nomeMunicipe = municipe.nome?.trim() || 'Munícipe';
+    await this.prisma.$transaction(async (tx) => {
+      await tx.solicitacaoPreProjetoArthurSaboya.update({
+        where: { id },
+        data: { status: StatusSolicitacaoPreProjeto.RESPONDIDO },
+      });
+      await tx.solicitacaoPreProjetoArthurSaboyaMensagem.create({
+        data: {
+          solicitacaoId: id,
+          autor: AutorMensagemPreProjetoArthurSaboya.SISTEMA,
+          corpo: `Chamado marcado como solucionado por ${nomeMunicipe}.`,
+          municipeContaId: municipe.id,
+        },
+      });
+    });
+
+    return this.obterSolicitacaoDetalheMunicipe(id, municipe);
+  }
+
+  async avaliarSolicitacaoPreProjetoMunicipe(
+    id: string,
+    municipe: MunicipeJwtPayload,
+    nota: number,
+    comentario?: string,
+  ): Promise<SolicitacaoPreProjetoDetalheComMensagensDto> {
+    const solicitacao = await this.prisma.solicitacaoPreProjetoArthurSaboya.findFirst({
+      where: {
+        AND: [{ id }, this.escopoWhereMunicipe(municipe)],
+      },
+      select: { id: true, status: true, avaliacaoNota: true },
+    });
+    if (!solicitacao) {
+      throw new NotFoundException('Solicitação não encontrada.');
+    }
+    if (solicitacao.status !== StatusSolicitacaoPreProjeto.RESPONDIDO) {
+      throw new BadRequestException(
+        'A avaliação só pode ser registrada após o chamado ser marcado como solucionado.',
+      );
+    }
+    if (solicitacao.avaliacaoNota !== null) {
+      throw new BadRequestException('A avaliação deste chamado já foi registrada.');
+    }
+    if (!Number.isInteger(nota) || nota < 1 || nota > 5) {
+      throw new BadRequestException('A nota deve ser um número inteiro entre 1 e 5.');
+    }
+
+    const comentarioLimpo = comentario?.trim() || null;
+    const estrelasLabel = `${nota} ${nota === 1 ? 'estrela' : 'estrelas'}`;
+    const complementoComentario = comentarioLimpo
+      ? ` Comentário: ${comentarioLimpo}`
+      : '';
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.solicitacaoPreProjetoArthurSaboya.update({
+        where: { id },
+        data: {
+          avaliacaoNota: nota,
+          avaliacaoComentario: comentarioLimpo,
+          avaliacaoEm: new Date(),
+        },
+      });
+      await tx.solicitacaoPreProjetoArthurSaboyaMensagem.create({
+        data: {
+          solicitacaoId: id,
+          autor: AutorMensagemPreProjetoArthurSaboya.SISTEMA,
+          corpo: `Avaliação registrada pelo munícipe: ${estrelasLabel}.${complementoComentario}`,
+          municipeContaId: municipe.id,
+        },
+      });
+    });
+
     return this.obterSolicitacaoDetalheMunicipe(id, municipe);
   }
 
@@ -603,6 +720,11 @@ export class AgendamentosService {
     usuario: Usuario,
   ): Promise<SolicitacaoPreProjetoDetalheComMensagensDto> {
     const s = await this.assertSolicitacaoPortalArthurSaboya(refUuidOuProtocolo, usuario);
+    if (s.status === StatusSolicitacaoPreProjeto.RESPONDIDO) {
+      throw new BadRequestException(
+        'Este chamado já foi marcado como solucionado e não aceita novas mensagens.',
+      );
+    }
     const corpo = texto.trim();
     if (!corpo) {
       throw new BadRequestException('Mensagem vazia.');
@@ -838,6 +960,9 @@ export class AgendamentosService {
       duvida: true,
       status: true,
       agendamentoId: true,
+      avaliacaoNota: true,
+      avaliacaoComentario: true,
+      avaliacaoEm: true,
       coordenadoriaId: true,
       divisaoId: true,
       divisao: {
@@ -1208,8 +1333,9 @@ export class AgendamentosService {
         data: {
           solicitacaoId: s.id,
           autor: AutorMensagemPreProjetoArthurSaboya.SISTEMA,
-          corpo:
-            'Agendamento registrado e enviado à coordenadoria (com data, técnico e unidade definidos no sistema).',
+          corpo: `O atendimento técnico foi agendado para o dia ${this.formatarDataHoraSaoPaulo(
+            dataHora,
+          )}. O atendimento será realizado de forma online, por meio do link enviado para o seu e-mail. Caso não possa comparecer, solicitamos que cancele o agendamento pelo botão Cancelar Atendimento.`,
         },
       });
       return created;
