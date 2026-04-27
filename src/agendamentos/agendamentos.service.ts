@@ -544,7 +544,6 @@ export class AgendamentosService {
             dto.naturezaDuvida as keyof typeof PRE_PROJETO_NATUREZA_LABEL
           ];
 
-    const coordPreProjetos = await this.resolverCoordenadoriaIdPreProjetos();
     const divisaoPreProjetos = await this.resolverDivisaoIdPreProjetos();
 
     const emailForm = dto.email.trim().toLowerCase();
@@ -577,7 +576,6 @@ export class AgendamentosService {
               : null,
           naturezaTexto,
           duvida: dto.descricao.trim(),
-          ...(coordPreProjetos ? { coordenadoriaId: coordPreProjetos } : {}),
           ...(divisaoPreProjetos ? { divisaoId: divisaoPreProjetos } : {}),
           ...(municipeContaId ? { municipeContaId } : {}),
         },
