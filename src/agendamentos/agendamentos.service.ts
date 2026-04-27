@@ -141,21 +141,23 @@ export class AgendamentosService {
    * Ex: "AMANDA CELLI FILHO" -> "Amanda Celli Filho"
    * Ex: "joão da silva" -> "João Da Silva"
    */
+  private static readonly PREPOSICOES_PT = new Set([
+    'da', 'de', 'do', 'das', 'dos', 'e', 'a', 'o', 'as', 'os',
+  ]);
+
   private padronizarNome(nome: string | null): string | null {
     if (!nome || typeof nome !== 'string') return nome;
-
-    // Remove espaços extras e divide em palavras
     const palavras = nome.trim().split(/\s+/);
-
-    // Capitaliza primeira letra de cada palavra e deixa o resto em minúscula
-    const palavrasFormatadas = palavras.map((palavra) => {
-      if (!palavra) return palavra;
-      // Primeira letra em maiúscula, resto em minúscula
-      return palavra.charAt(0).toUpperCase() + palavra.slice(1).toLowerCase();
-    });
-
-    // Junta as palavras com espaço
-    return palavrasFormatadas.join(' ');
+    return palavras
+      .map((palavra, index) => {
+        if (!palavra) return palavra;
+        const lower = palavra.toLowerCase();
+        if (index > 0 && AgendamentosService.PREPOSICOES_PT.has(lower)) {
+          return lower;
+        }
+        return lower.charAt(0).toUpperCase() + lower.slice(1);
+      })
+      .join(' ');
   }
 
   /**
@@ -498,12 +500,17 @@ export class AgendamentosService {
     const ano = dataRef.getFullYear();
     const mes = String(dataRef.getMonth() + 1).padStart(2, '0');
     const prefixo = `AS-${ano}${mes}`;
-    const ultimo = await tx.solicitacaoPreProjetoArthurSaboya.findFirst({
-      where: { protocolo: { startsWith: prefixo } },
-      orderBy: { protocolo: 'desc' },
-      select: { protocolo: true },
-    });
-    const atual = ultimo?.protocolo?.slice(prefixo.length) ?? '000';
+    // FOR UPDATE bloqueia as linhas lidas até o fim da transação, evitando
+    // que duas requisições simultâneas leiam o mesmo "último protocolo" e
+    // gerem duplicatas antes de qualquer uma confirmar a escrita.
+    const rows = await tx.$queryRaw<{ protocolo: string }[]>`
+      SELECT protocolo FROM solicitacoes_pre_projeto_arthur_saboya
+      WHERE protocolo LIKE ${`${prefixo}%`}
+      ORDER BY protocolo DESC
+      LIMIT 1
+      FOR UPDATE
+    `;
+    const atual = rows[0]?.protocolo?.slice(prefixo.length) ?? '000';
     const numero = Number.parseInt(atual, 10);
     const proximo = Number.isFinite(numero) ? numero + 1 : 1;
     if (proximo > 999) {
@@ -1633,12 +1640,9 @@ export class AgendamentosService {
     usuario: Usuario,
   ): Promise<SolicitacaoPreProjetoListItemDto> {
     const s = await this.assertSolicitacaoPortalArthurSaboya(refUuidOuProtocolo, usuario);
-    if (
-      s.status !== StatusSolicitacaoPreProjeto.SOLICITADO &&
-      s.status !== StatusSolicitacaoPreProjeto.RESPONDIDO
-    ) {
+    if (s.status !== StatusSolicitacaoPreProjeto.SOLICITADO) {
       throw new BadRequestException(
-        'Só é possível marcar como aguardando data a partir de Solicitado ou Respondido.',
+        'Só é possível marcar como aguardando data a partir de Solicitado.',
       );
     }
     await this.prisma.$transaction(async (tx) => {
@@ -2202,10 +2206,11 @@ export class AgendamentosService {
       data: agendamentos as AgendamentoResponseDTO[],
     };
   }
-  mascararCPF(cpf: string): string {
+  private mascararCPF(cpf: string): string {
     if (!cpf) return '';
-    const cpfCensurado = cpf.substring(0, 3) + '.***.***-' + cpf.substring(9, 11);
-    return cpfCensurado;
+    const digits = cpf.replace(/\D/g, '');
+    if (digits.length < 11) return cpf;
+    return digits.substring(0, 3) + '.***.***-' + digits.substring(9, 11);
   }
 
   /**
@@ -3086,22 +3091,26 @@ export class AgendamentosService {
         }
         // Se for número (serial do Excel)
         else if (typeof dataHora === 'number') {
-          // Excel serial date: número de dias desde 1/1/1900
-          // Para datas com hora, o número pode ser decimal
+          // Serial do Excel: dias inteiros desde 01/01/1900 (com bug do 1900 como bissexto → -2).
           const diasDesde1900 = Math.floor(dataHora);
           const fracaoDia = dataHora - diasDesde1900;
-
-          // Cria a data base em UTC
-          const dataBase = new Date(Date.UTC(1900, 0, 1)); // 1/1/1900 em UTC
-          dataHoraObj = new Date(
-            dataBase.getTime() + (diasDesde1900 - 2) * 86400 * 1000,
-          ); // -2 porque Excel conta 1900 como ano bissexto
-          // Adiciona a fração do dia (hora) em UTC
-          if (fracaoDia > 0) {
-            dataHoraObj = new Date(
-              dataHoraObj.getTime() + fracaoDia * 86400 * 1000,
-            );
-          }
+          // Obtém a data civil (ano/mês/dia) a partir da parte inteira em UTC.
+          const dataBase = new Date(
+            Date.UTC(1900, 0, 1) + (diasDesde1900 - 2) * 86400 * 1000,
+          );
+          // Parte horária: converte fração do dia em h/m/s e trata como hora civil SP.
+          const totalSegundos = Math.round(fracaoDia * 86400);
+          const h = Math.floor(totalSegundos / 3600);
+          const m = Math.floor((totalSegundos % 3600) / 60);
+          const s = totalSegundos % 60;
+          dataHoraObj = instanteCivilSaoPaulo(
+            dataBase.getUTCFullYear(),
+            dataBase.getUTCMonth(),
+            dataBase.getUTCDate(),
+            h,
+            m,
+            s,
+          );
         } else {
           if (index < 3) {
             // Log apenas as primeiras 3 linhas

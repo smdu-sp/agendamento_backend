@@ -364,8 +364,8 @@ export class AgendamentosController {
     @UsuarioAtual() usuario?: Usuario,
   ): Promise<AgendamentoPaginadoResponseDTO> {
     return this.agendamentosService.buscarTudo(
-      +pagina,
-      +limite,
+      +(pagina ?? 1) || 1,
+      +(limite ?? 10) || 10,
       busca,
       status,
       dataInicio,
