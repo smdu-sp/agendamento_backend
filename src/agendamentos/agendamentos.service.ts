@@ -1673,7 +1673,7 @@ export class AgendamentosService {
           solicitacaoId: s.id,
           autor: AutorMensagemPreProjetoArthurSaboya.SISTEMA,
           corpo:
-            'Solicitação enviada para a coordenadoria responsável. Por favor aguarde a confirmação do agendamento técnico',
+            'O agendamento foi solicitado. Aguarde a confirmação via e-mail.',
         },
       });
     });
