@@ -67,4 +67,61 @@ export class EmailService {
       text: `Olá, ${nome}. Redefina sua senha pelo link: ${link}. Este link expira em 30 minutos.`,
     });
   }
+
+  async enviarNotificacaoCancelamentoAtendimentoArthurSaboya(params: {
+    protocolo: string;
+    nomeMunicipe: string;
+    emailMunicipe: string;
+    dataAgendamento?: Date | null;
+    destinatarios: string[];
+  }): Promise<void> {
+    const destinatariosUnicos = Array.from(
+      new Set(
+        params.destinatarios
+          .map((v) => String(v || '').trim().toLowerCase())
+          .filter((v) => !!v),
+      ),
+    );
+    if (destinatariosUnicos.length === 0) return;
+
+    const dataHora = params.dataAgendamento
+      ? new Intl.DateTimeFormat('pt-BR', {
+          timeZone: 'America/Sao_Paulo',
+          dateStyle: 'short',
+          timeStyle: 'short',
+        }).format(params.dataAgendamento)
+      : 'não informada';
+
+    const assunto = `[Arthur Saboya] Cancelamento de atendimento — ${params.protocolo}`;
+    const html = `
+      <div style="font-family: Arial, sans-serif; line-height:1.5;">
+        <h2>Cancelamento de atendimento (Arthur Saboya)</h2>
+        <p>O munícipe solicitou o cancelamento do atendimento agendado.</p>
+        <ul>
+          <li><strong>Protocolo:</strong> ${params.protocolo}</li>
+          <li><strong>Munícipe:</strong> ${params.nomeMunicipe}</li>
+          <li><strong>E-mail do munícipe:</strong> ${params.emailMunicipe}</li>
+          <li><strong>Data/hora anteriormente agendada:</strong> ${dataHora}</li>
+        </ul>
+        <p>Favor seguir com o tratamento do chamado no portal interno.</p>
+      </div>
+    `;
+
+    const text =
+      `Cancelamento de atendimento (Arthur Saboya)\n\n` +
+      `O munícipe solicitou o cancelamento do atendimento agendado.\n` +
+      `Protocolo: ${params.protocolo}\n` +
+      `Munícipe: ${params.nomeMunicipe}\n` +
+      `E-mail do munícipe: ${params.emailMunicipe}\n` +
+      `Data/hora anteriormente agendada: ${dataHora}\n\n` +
+      `Favor seguir com o tratamento do chamado no portal interno.`;
+
+    await transporter.sendMail({
+      from: this.getRemetente(),
+      to: destinatariosUnicos.join(','),
+      subject: assunto,
+      html,
+      text,
+    });
+  }
 }

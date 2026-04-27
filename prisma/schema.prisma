@@ -23,6 +23,7 @@ model Usuario {
   divisaoId    String?
 
   agendamentos           Agendamento[]
+  solicitacoesPreProjetoArthurComoTecnicoArthur SolicitacaoPreProjetoArthurSaboya[] @relation("SolicitacaoArthurTecnico")
   divisao                Divisao?                @relation(fields: [divisaoId], references: [id], onDelete: SetNull)
   logImportacoesPlanilha LogImportacaoPlanilha[]
   logImportacoesOutlook  LogImportacaoOutlook[]
@@ -158,6 +159,9 @@ model SolicitacaoPreProjetoArthurSaboya {
   agendamentoId String? @unique
   agendamento   Agendamento? @relation(fields: [agendamentoId], references: [id], onDelete: SetNull)
 
+  tecnicoArthurId String?
+  tecnicoArthur   Usuario? @relation("SolicitacaoArthurTecnico", fields: [tecnicoArthurId], references: [id], onDelete: SetNull)
+
   coordenadoria Coordenadoria? @relation(fields: [coordenadoriaId], references: [id], onDelete: SetNull)
   divisao       Divisao?       @relation(fields: [divisaoId], references: [id], onDelete: SetNull)
 
@@ -195,6 +199,7 @@ enum Permissao {
   DEV
   ADM
   TEC
+  ARTHUR_SABOYA
   USR
   PONTO_FOCAL
   COORDENADOR

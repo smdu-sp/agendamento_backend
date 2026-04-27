@@ -6,6 +6,7 @@ import { PrismaModule } from 'src/prisma/prisma.module';
 import { UsuariosModule } from 'src/usuarios/usuarios.module';
 import { CoordenadoriasModule } from 'src/coordenadorias/coordenadorias.module';
 import { MunicipeJwtAuthGuard } from 'src/auth/guards/municipe-jwt-auth.guard';
+import { EmailModule } from 'src/email/email.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { MunicipeJwtAuthGuard } from 'src/auth/guards/municipe-jwt-auth.guard';
     PrismaModule,
     UsuariosModule,
     CoordenadoriasModule,
+    EmailModule,
   ],
   controllers: [AgendamentosController],
   providers: [AgendamentosService, MunicipeJwtAuthGuard],

@@ -50,6 +50,7 @@ import {
 } from './dto/dashboard-response.dto';
 import { UsuariosService } from 'src/usuarios/usuarios.service';
 import { CoordenadoriasService } from 'src/coordenadorias/coordenadorias.service';
+import { EmailService } from 'src/email/email.service';
 import { instanteCivilSaoPaulo } from './sao-paulo-datetime.util';
 import type { MunicipeJwtPayload } from 'src/auth/guards/municipe-jwt-auth.guard';
 
@@ -65,6 +66,7 @@ export class AgendamentosService {
     private app: AppService,
     private usuariosService: UsuariosService,
     private coordenadoriasService: CoordenadoriasService,
+    private emailService: EmailService,
     private jwtService: JwtService,
   ) {}
 
@@ -178,6 +180,7 @@ export class AgendamentosService {
       if (usuario) {
         await this.usuariosService.vincularDivisaoTecnicoPorLoginSeDisponivel(
           login,
+          coordenadoriaId,
         );
         return usuario.id;
       }
@@ -228,6 +231,7 @@ export class AgendamentosService {
           );
           await this.usuariosService.vincularDivisaoTecnicoPorLoginSeDisponivel(
             dadosLDAP.login,
+            coordenadoriaId,
           );
           return novoTecnico.id;
         } catch (error) {
@@ -284,6 +288,42 @@ export class AgendamentosService {
   }
 
   /**
+   * Técnico vinculado à divisão da Sala Arthur Saboya (`DIVISAO_ID_PRE_PROJETOS`)
+   * enxerga agendamentos em que é o técnico atribuído ou em que `divisaoId` é a da Arthur.
+   * Demais técnicos: apenas agendamentos em que são o técnico atribuído.
+   * DEV personificando TEC (`permissaoReal === 'DEV'`): mesma visão que “por divisão”
+   * da unidade cadastrada no perfil, sem ampliar pelo modo Arthur nem por `tecnicoId`.
+   */
+  private escopoListaAgendamentosParaTec(usuario: Usuario):
+    | { modo: 'dev_impersona_tec'; divisaoId: string }
+    | { modo: 'dev_impersona_tec_sem_divisao' }
+    | { modo: 'arthur'; divisaoArthurId: string; usuarioId: string }
+    | { modo: 'proprio'; usuarioId: string } {
+    const permReal = (usuario as any).permissaoReal as string | undefined;
+    if (usuario.permissao === 'TEC' && permReal === 'DEV') {
+      const divisaoDev = (usuario as any).divisaoId as string | null | undefined;
+      if (!divisaoDev) {
+        return { modo: 'dev_impersona_tec_sem_divisao' };
+      }
+      return { modo: 'dev_impersona_tec', divisaoId: divisaoDev };
+    }
+    const divisaoArthur = this.divisaoPreProjetosEnv();
+    const divisaoUsuario = (usuario as any).divisaoId as string | undefined;
+    if (
+      divisaoArthur &&
+      divisaoUsuario &&
+      divisaoUsuario === divisaoArthur
+    ) {
+      return {
+        modo: 'arthur',
+        divisaoArthurId: divisaoArthur,
+        usuarioId: usuario.id,
+      };
+    }
+    return { modo: 'proprio', usuarioId: usuario.id };
+  }
+
+  /**
    * Busca tipo de agendamento por texto; se não existir, cadastra automaticamente.
    */
   private async buscarOuCriarTipoPorTexto(
@@ -325,15 +365,45 @@ export class AgendamentosService {
     return `${byType('day')}/${byType('month')}/${byType('year')} às ${byType('hour')}:${byType('minute')}`;
   }
 
+  /**
+   * Pré-projetos Arthur Saboya: fluxo em `solicitacoes_pre_projeto_arthur_saboya` / portal Pedidos,
+   * não na listagem nem no dashboard de `agendamentos`.
+   */
+  private static whereExcluirPreProjetoArthurNaListaAgendamentos(): Prisma.AgendamentoWhereInput {
+    return {
+      NOT: {
+        tipoAgendamento: { texto: PRE_PROJETO_TIPO_AGENDAMENTO_TEXTO },
+      },
+    };
+  }
+
   async criar(
     createAgendamentoDto: CreateAgendamentoDto,
   ): Promise<AgendamentoResponseDTO> {
     const { tipoAgendamentoTexto, ...restDto } = createAgendamentoDto;
     let tipoAgendamentoId = restDto.tipoAgendamentoId;
     if (tipoAgendamentoTexto?.trim()) {
+      if (
+        tipoAgendamentoTexto.trim() === PRE_PROJETO_TIPO_AGENDAMENTO_TEXTO
+      ) {
+        throw new BadRequestException(
+          'Pedidos de pré-projetos (Arthur Saboya) são tratados apenas no menu Pedidos Arthur Saboya, não na criação de agendamentos.',
+        );
+      }
       tipoAgendamentoId = await this.buscarOuCriarTipoPorTexto(
         tipoAgendamentoTexto.trim(),
       );
+    }
+    if (tipoAgendamentoId) {
+      const tipoRow = await this.prisma.tipoAgendamento.findUnique({
+        where: { id: tipoAgendamentoId },
+        select: { texto: true },
+      });
+      if (tipoRow?.texto?.trim() === PRE_PROJETO_TIPO_AGENDAMENTO_TEXTO) {
+        throw new BadRequestException(
+          'Pedidos de pré-projetos (Arthur Saboya) são tratados apenas no menu Pedidos Arthur Saboya, não na criação de agendamentos.',
+        );
+      }
     }
 
     let tecnicoId = restDto.tecnicoId;
@@ -568,7 +638,7 @@ export class AgendamentosService {
     if (!row) {
       throw new NotFoundException('Solicitação não encontrada.');
     }
-    return this.mapSolicitacaoDetalheComMensagens(row);
+    return this.mapSolicitacaoDetalheComMensagens(row, true);
   }
 
   async adicionarMensagemMunicipeNaSolicitacao(
@@ -638,6 +708,141 @@ export class AgendamentosService {
           municipeContaId: municipe.id,
         },
       });
+    });
+
+    return this.obterSolicitacaoDetalheMunicipe(id, municipe);
+  }
+
+  private async notificarCancelamentoAtendimentoMunicipe(params: {
+    solicitacaoId: string;
+    protocolo: string;
+    nomeMunicipe: string;
+    emailMunicipe: string;
+    coordenadoriaId: string | null;
+    tecnicoArthurId: string | null;
+    agendamentoTecnicoId: string | null;
+    dataAgendamento?: Date | null;
+  }): Promise<void> {
+    const caixaArthurSaboya = 'saboya_atendimento@prefeitura.sp.gov.br';
+    const destinatarios = new Set<string>([caixaArthurSaboya]);
+
+    if (params.coordenadoriaId) {
+      const pontosFocais = await this.prisma.usuario.findMany({
+        where: {
+          status: true,
+          permissao: 'PONTO_FOCAL',
+          divisao: { coordenadoriaId: params.coordenadoriaId },
+          email: { not: null },
+        },
+        select: { email: true },
+      });
+      for (const pf of pontosFocais) {
+        const email = pf.email?.trim();
+        if (email) destinatarios.add(email);
+      }
+    }
+
+    const idsTecnicos = [params.tecnicoArthurId, params.agendamentoTecnicoId].filter(
+      (v): v is string => !!v,
+    );
+    if (idsTecnicos.length > 0) {
+      const tecnicos = await this.prisma.usuario.findMany({
+        where: {
+          id: { in: idsTecnicos },
+          status: true,
+          email: { not: null },
+        },
+        select: { email: true },
+      });
+      for (const tecnico of tecnicos) {
+        const email = tecnico.email?.trim();
+        if (email) destinatarios.add(email);
+      }
+    }
+
+    try {
+      await this.emailService.enviarNotificacaoCancelamentoAtendimentoArthurSaboya(
+        {
+          protocolo: params.protocolo,
+          nomeMunicipe: params.nomeMunicipe,
+          emailMunicipe: params.emailMunicipe,
+          dataAgendamento: params.dataAgendamento ?? null,
+          destinatarios: Array.from(destinatarios),
+        },
+      );
+    } catch (error) {
+      this.logger.error(
+        `Falha ao enviar e-mail de cancelamento da solicitação ${params.solicitacaoId}.`,
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
+  }
+
+  async cancelarAtendimentoSolicitacaoMunicipe(
+    id: string,
+    municipe: MunicipeJwtPayload,
+  ): Promise<SolicitacaoPreProjetoDetalheComMensagensDto> {
+    const solicitacao = await this.prisma.solicitacaoPreProjetoArthurSaboya.findFirst({
+      where: {
+        AND: [{ id }, this.escopoWhereMunicipe(municipe)],
+      },
+      select: {
+        id: true,
+        status: true,
+        protocolo: true,
+        nome: true,
+        email: true,
+        coordenadoriaId: true,
+        tecnicoArthurId: true,
+        dataAgendamento: true,
+        agendamento: { select: { tecnicoId: true } },
+      },
+    });
+    if (!solicitacao) {
+      throw new NotFoundException('Solicitação não encontrada.');
+    }
+    if (solicitacao.status === StatusSolicitacaoPreProjeto.RESPONDIDO) {
+      throw new BadRequestException(
+        'Este chamado já foi solucionado e não pode ser cancelado.',
+      );
+    }
+    if (solicitacao.status !== StatusSolicitacaoPreProjeto.AGENDAMENTO_CRIADO) {
+      throw new BadRequestException(
+        'Somente atendimentos já agendados podem ser cancelados.',
+      );
+    }
+
+    const nomeMunicipe = municipe.nome?.trim() || 'Munícipe';
+    await this.prisma.$transaction(async (tx) => {
+      await tx.solicitacaoPreProjetoArthurSaboya.update({
+        where: { id },
+        data: {
+          status: StatusSolicitacaoPreProjeto.AGUARDANDO_DATA,
+          dataAgendamento: null,
+          agendamentoId: null,
+        },
+      });
+      await tx.solicitacaoPreProjetoArthurSaboyaMensagem.create({
+        data: {
+          solicitacaoId: id,
+          autor: AutorMensagemPreProjetoArthurSaboya.SISTEMA,
+          corpo:
+            `Atendimento cancelado pelo munícipe ${nomeMunicipe}. ` +
+            'A solicitação voltou para Aguardando data/hora.',
+          municipeContaId: municipe.id,
+        },
+      });
+    });
+
+    await this.notificarCancelamentoAtendimentoMunicipe({
+      solicitacaoId: solicitacao.id,
+      protocolo: solicitacao.protocolo,
+      nomeMunicipe: solicitacao.nome,
+      emailMunicipe: solicitacao.email,
+      coordenadoriaId: solicitacao.coordenadoriaId ?? null,
+      tecnicoArthurId: solicitacao.tecnicoArthurId ?? null,
+      agendamentoTecnicoId: solicitacao.agendamento?.tecnicoId ?? null,
+      dataAgendamento: solicitacao.dataAgendamento ?? null,
     });
 
     return this.obterSolicitacaoDetalheMunicipe(id, municipe);
@@ -728,9 +933,15 @@ export class AgendamentosService {
         'Divisão da Sala Arthur Saboya não configurada no sistema.',
       );
     }
-    if (usuario.permissao !== 'TEC' || !divUser || divUser !== divSala) {
+    const podeComoStaffInterno =
+      usuario.permissao === 'DEV' || usuario.permissao === 'ADM';
+    const podeComoTecnicoSala =
+      (usuario.permissao === 'TEC' || usuario.permissao === 'ARTHUR_SABOYA') &&
+      !!divUser &&
+      divUser === divSala;
+    if (!podeComoStaffInterno && !podeComoTecnicoSala) {
       throw new ForbiddenException(
-        'Somente o técnico da Sala Arthur Saboya pode enviar mensagens neste chamado.',
+        'Somente o técnico da Sala Arthur Saboya (ou perfil administrativo autorizado) pode enviar mensagens neste chamado.',
       );
     }
 
@@ -789,6 +1000,7 @@ export class AgendamentosService {
 
   private mapSolicitacaoDetalheComMensagens(
     r: unknown,
+    ocultarNomeEquipeNoPortalMunicipe: boolean = false,
   ): SolicitacaoPreProjetoDetalheComMensagensDto {
     const full = r as {
       mensagens: Array<{
@@ -813,7 +1025,9 @@ export class AgendamentosService {
           m.autor === AutorMensagemPreProjetoArthurSaboya.SISTEMA
             ? 'Sistema'
             : m.autor === AutorMensagemPreProjetoArthurSaboya.PONTO_FOCAL
-              ? m.usuario?.nome ?? 'Equipe'
+              ? ocultarNomeEquipeNoPortalMunicipe
+                ? 'Arthur Saboya'
+                : m.usuario?.nome ?? 'Equipe'
               : m.municipeConta?.nome ?? nomeSolic,
       }),
     );
@@ -915,7 +1129,7 @@ export class AgendamentosService {
 
   /**
    * Lista pedidos de pré-projetos para o portal interno da Sala Arthur Saboya.
-   * Apenas ADM, DEV ou PONTO_FOCAL cuja divisão é a configurada em `DIVISAO_ID_PRE_PROJETOS`.
+   * Apenas perfis autorizados no portal Arthur Saboya.
    */
   async buscarSolicitacoesPreProjetosPortalArthurSaboya(
     pagina: number = 1,
@@ -952,10 +1166,22 @@ export class AgendamentosService {
       );
     }
 
-    if (perm === 'TEC') {
-      if (!divSala || !divUser || divUser !== divSala) {
+    if (perm === 'TEC' || perm === 'ARTHUR_SABOYA') {
+      if (divSala && divUser && divUser === divSala) {
+        return this.listarSolicitacoesPreProjetoComWhere(
+          pagina,
+          limite,
+          busca,
+          {
+            divisaoId: divSala,
+          },
+          statusFiltro,
+        );
+      }
+      const coordId = await this.coordenadoriaIdDoUsuarioLogado(usuarioLogado);
+      if (!coordId) {
         throw new ForbiddenException(
-          'Acesso restrito ao técnico da Sala Arthur Saboya.',
+          'Acesso restrito a usuários vinculados a uma coordenadoria.',
         );
       }
       return this.listarSolicitacoesPreProjetoComWhere(
@@ -963,9 +1189,9 @@ export class AgendamentosService {
         limite,
         busca,
         {
-          divisaoId: divSala,
+          coordenadoriaId: coordId,
         },
-        statusFiltro,
+        statusFiltro ?? StatusSolicitacaoPreProjeto.AGENDAMENTO_CRIADO,
       );
     }
 
@@ -1052,14 +1278,21 @@ export class AgendamentosService {
       dataAgendamento: true,
       coordenadoriaId: true,
       divisaoId: true,
+      tecnicoArthurId: true,
+      tecnicoArthur: {
+        select: {
+          nome: true,
+          email: true,
+        },
+      },
       divisao: {
         select: {
           coordenadoria: {
-            select: { email: true, sigla: true, nome: true },
+            select: { id: true, email: true, sigla: true, nome: true },
           },
         },
       },
-      coordenadoria: { select: { email: true, sigla: true, nome: true } },
+      coordenadoria: { select: { id: true, email: true, sigla: true, nome: true } },
     };
   }
 
@@ -1080,32 +1313,49 @@ export class AgendamentosService {
     const row = r as {
       divisao?: {
         coordenadoria?: {
+          id: string;
           email?: string | null;
           sigla: string;
           nome?: string | null;
         } | null;
       } | null;
       coordenadoria?: {
+        id: string;
         email?: string | null;
         sigla: string;
         nome?: string | null;
       } | null;
+      tecnicoArthur?: {
+        nome?: string | null;
+        email?: string | null;
+      } | null;
       agendamento?: unknown;
     } & Omit<
       SolicitacaoPreProjetoListItemDto,
-      'emailContatoDivisao' | 'coordenadoriaTexto'
+      | 'emailContatoDivisao'
+      | 'coordenadoriaTexto'
+      | 'tecnicoArthurNome'
+      | 'tecnicoArthurEmail'
     >;
-    const { divisao, coordenadoria, agendamento: _ag, ...rest } = row;
+    const { divisao, coordenadoria, tecnicoArthur, agendamento: _ag, ...rest } =
+      row;
     const coordenadoriaTexto =
       AgendamentosService.formatCoordenadoriaLabel(coordenadoria) ??
       AgendamentosService.formatCoordenadoriaLabel(divisao?.coordenadoria) ??
       null;
     return {
       ...rest,
+      coordenadoriaId:
+        rest.coordenadoriaId ??
+        coordenadoria?.id ??
+        divisao?.coordenadoria?.id ??
+        null,
       emailContatoDivisao:
         divisao?.coordenadoria?.email?.trim() ||
         coordenadoria?.email?.trim() ||
         null,
+      tecnicoArthurNome: tecnicoArthur?.nome?.trim() || null,
+      tecnicoArthurEmail: tecnicoArthur?.email?.trim() || null,
       coordenadoriaTexto,
     };
   }
@@ -1265,15 +1515,19 @@ export class AgendamentosService {
       return row;
     }
 
-    if (perm === 'TEC') {
-      if (!divSala || !divUser || divUser !== divSala) {
-        throw new ForbiddenException(
-          'Acesso restrito ao técnico da Sala Arthur Saboya.',
-        );
+    if (perm === 'TEC' || perm === 'ARTHUR_SABOYA') {
+      if (divSala && divUser && divUser === divSala) {
+        if (row.divisaoId !== divSala) {
+          throw new ForbiddenException(
+            'Esta solicitação não pertence à divisão da Sala Arthur Saboya.',
+          );
+        }
+        return row;
       }
-      if (row.divisaoId !== divSala) {
+      const coordId = await this.coordenadoriaIdDoUsuarioLogado(usuario);
+      if (!coordId || !row.coordenadoriaId || row.coordenadoriaId !== coordId) {
         throw new ForbiddenException(
-          'Esta solicitação não pertence à divisão da Sala Arthur Saboya.',
+          'Sem permissão para operar solicitações fora da sua coordenadoria.',
         );
       }
       return row;
@@ -1286,10 +1540,18 @@ export class AgendamentosService {
     refUuidOuProtocolo: string,
     usuario: Usuario,
   ): Promise<SolicitacaoPreProjetoListItemDto> {
+    if (usuario.permissao !== 'ARTHUR_SABOYA') {
+      throw new ForbiddenException(
+        'Apenas o perfil Arthur_saboya pode marcar chamado como solucionado.',
+      );
+    }
     const s = await this.assertSolicitacaoPortalArthurSaboya(refUuidOuProtocolo, usuario);
-    if (s.status !== StatusSolicitacaoPreProjeto.SOLICITADO) {
+    if (
+      s.status !== StatusSolicitacaoPreProjeto.SOLICITADO &&
+      s.status !== StatusSolicitacaoPreProjeto.AGENDAMENTO_CRIADO
+    ) {
       throw new BadRequestException(
-        'Só é possível confirmar resposta para solicitações com status Solicitado.',
+        'Só é possível concluir solicitações com status Solicitado ou Agendamento criado.',
       );
     }
     await this.prisma.$transaction(async (tx) => {
@@ -1403,15 +1665,15 @@ export class AgendamentosService {
           coordenadoriaId: dto.coordenadoriaId,
           dataAgendamento: dataHora,
           agendamentoId: null,
+          tecnicoArthurId: dto.tecnicoId,
         },
       });
       await tx.solicitacaoPreProjetoArthurSaboyaMensagem.create({
         data: {
           solicitacaoId: s.id,
           autor: AutorMensagemPreProjetoArthurSaboya.SISTEMA,
-          corpo: `Solicitação encaminhada para a coordenadoria em ${this.formatarDataHoraSaoPaulo(
-            dataHora,
-          )}, com técnico da Arthur Saboya definido. O ponto focal da coordenadoria deverá atribuir o técnico da unidade para compor o atendimento em dupla técnica (Arthur Saboya + coordenadoria).`,
+          corpo:
+            'Solicitação enviada para a coordenadoria responsável. Por favor aguarde a confirmação do agendamento técnico',
         },
       });
     });
@@ -1464,14 +1726,6 @@ export class AgendamentosService {
       );
     }
 
-    await this.prisma.solicitacaoPreProjetoArthurSaboyaMensagem.create({
-      data: {
-        solicitacaoId: s.id,
-        autor: AutorMensagemPreProjetoArthurSaboya.SISTEMA,
-        corpo: `Técnico da coordenadoria atribuído: ${tecnicoCoord.nome}${tecnicoCoord.login ? ` (${tecnicoCoord.login})` : ''}. O atendimento seguirá com dupla técnica (Arthur Saboya + coordenadoria).`,
-      },
-    });
-
     const sel = this.solicitacaoPortalListSelect();
     const r = await this.prisma.solicitacaoPreProjetoArthurSaboya.findUniqueOrThrow(
       { where: { id: s.id }, select: sel },
@@ -1495,10 +1749,13 @@ export class AgendamentosService {
     filtroCoordenadoria: string | undefined,
     coordenadoriaId: string | undefined,
     tecnicoId: string | undefined,
+    /** Técnico Arthur: (tecnicoId = usuário OU divisaoId = Arthur). */
+    tecArthurDivisaoOpcional: string | undefined,
     filtroDivisaoTecnico: string | undefined,
     filtroPFCoordSemTecnico: string | undefined,
     filtroPFDivisaoArthurEncaminhado: string | undefined,
-    legacyPfPreProjetoTipoId: string | null,
+    /** Exclui agendamentos do tipo pré-projetos Arthur da lista (fluxo separado). */
+    preProjetoTipoAgendamentoIdExcluir: string | null,
     tipoProcesso: 'DIGITAL' | 'FISICO',
   ): Prisma.Sql {
     const parts: Prisma.Sql[] = [];
@@ -1526,7 +1783,11 @@ export class AgendamentosService {
     if (coordenadoriaId && !filtroDivisaoTecnico) {
       parts.push(Prisma.sql`coordenadoriaId = ${coordenadoriaId}`);
     }
-    if (tecnicoId) {
+    if (tecArthurDivisaoOpcional && tecnicoId) {
+      parts.push(
+        Prisma.sql`(tecnicoId = ${tecnicoId} OR divisaoId = ${tecArthurDivisaoOpcional})`,
+      );
+    } else if (tecnicoId) {
       parts.push(Prisma.sql`tecnicoId = ${tecnicoId}`);
     }
     if (filtroDivisaoTecnico) {
@@ -1536,15 +1797,9 @@ export class AgendamentosService {
           ? Prisma.sql`(coordenadoriaId = ${filtroPFCoordSemTecnico} AND divisaoId = ${filtroPFDivisaoArthurEncaminhado})`
           : null;
       if (filtroPFCoordSemTecnico) {
-        if (legacyPfPreProjetoTipoId) {
-          parts.push(
-            Prisma.sql`(tecnicoId IN (SELECT id FROM usuarios WHERE divisaoId = ${filtroDivisaoTecnico}) OR (coordenadoriaId = ${filtroPFCoordSemTecnico} AND tecnicoId IS NULL) OR (tecnicoId IS NULL AND coordenadoriaId IS NULL AND tipoAgendamentoId = ${legacyPfPreProjetoTipoId}) OR ${porDivisaoAg}${porArthurEncaminhado ? Prisma.sql` OR ${porArthurEncaminhado}` : Prisma.empty})`,
-          );
-        } else {
-          parts.push(
-            Prisma.sql`(tecnicoId IN (SELECT id FROM usuarios WHERE divisaoId = ${filtroDivisaoTecnico}) OR (coordenadoriaId = ${filtroPFCoordSemTecnico} AND tecnicoId IS NULL) OR ${porDivisaoAg}${porArthurEncaminhado ? Prisma.sql` OR ${porArthurEncaminhado}` : Prisma.empty})`,
-          );
-        }
+        parts.push(
+          Prisma.sql`(tecnicoId IN (SELECT id FROM usuarios WHERE divisaoId = ${filtroDivisaoTecnico}) OR (coordenadoriaId = ${filtroPFCoordSemTecnico} AND tecnicoId IS NULL) OR ${porDivisaoAg}${porArthurEncaminhado ? Prisma.sql` OR ${porArthurEncaminhado}` : Prisma.empty})`,
+        );
       } else {
         parts.push(
           Prisma.sql`(tecnicoId IN (SELECT id FROM usuarios WHERE divisaoId = ${filtroDivisaoTecnico}) OR ${porDivisaoAg})`,
@@ -1558,6 +1813,11 @@ export class AgendamentosService {
     } else {
       parts.push(
         Prisma.sql`(processo IS NULL OR TRIM(processo) NOT REGEXP ${regexLiteral})`,
+      );
+    }
+    if (preProjetoTipoAgendamentoIdExcluir) {
+      parts.push(
+        Prisma.sql`(tipoAgendamentoId IS NULL OR tipoAgendamentoId <> ${preProjetoTipoAgendamentoIdExcluir})`,
       );
     }
 
@@ -1582,6 +1842,9 @@ export class AgendamentosService {
     let filtroCoordenadoria: string | undefined;
     let filtroDivisaoTecnico: string | undefined;
     let filtroPFCoordSemTecnico: string | undefined;
+    let escopoTecLista:
+      | ReturnType<AgendamentosService['escopoListaAgendamentosParaTec']>
+      | undefined;
     if (usuarioLogado) {
       if (usuarioLogado.permissao === 'PONTO_FOCAL') {
         // Ponto Focal: técnico da sua divisão OU solicitação sem técnico da mesma coordenadoria
@@ -1607,8 +1870,17 @@ export class AgendamentosService {
         }
         filtroDivisaoTecnico = divisaoIdLogado;
       } else if (usuarioLogado.permissao === 'TEC') {
-        // Técnico só vê seus próprios agendamentos
-        tecnicoId = usuarioLogado.id;
+        const escTecLista = this.escopoListaAgendamentosParaTec(usuarioLogado);
+        if (escTecLista.modo === 'dev_impersona_tec_sem_divisao') {
+          return { total: 0, pagina: 0, limite: 0, data: [] };
+        }
+        if (escTecLista.modo === 'dev_impersona_tec') {
+          filtroDivisaoTecnico = escTecLista.divisaoId;
+          tecnicoId = undefined;
+        } else {
+          escopoTecLista = escTecLista;
+          tecnicoId = escTecLista.usuarioId;
+        }
       } else if (usuarioLogado.permissao === 'DEV') {
         // DEV com unidade vê processos da própria coordenadoria; sem unidade mantém visão global.
         const coordIdLogado = await this.coordenadoriaIdDoUsuarioLogado(
@@ -1623,15 +1895,6 @@ export class AgendamentosService {
 
     const envCoordPre = this.coordenadoriaPreProjetosEnv();
     const envDivPre = this.divisaoPreProjetosEnv();
-    let legacyPfPreProjetoTipoId: string | null = null;
-    if (
-      usuarioLogado?.permissao === 'PONTO_FOCAL' &&
-      filtroPFCoordSemTecnico &&
-      envCoordPre &&
-      filtroPFCoordSemTecnico === envCoordPre
-    ) {
-      legacyPfPreProjetoTipoId = await this.getPreProjetoTipoAgendamentoId();
-    }
 
     let pontoFocalWhere: Prisma.AgendamentoWhereInput | undefined;
     if (filtroDivisaoTecnico) {
@@ -1647,13 +1910,6 @@ export class AgendamentosService {
             divisaoId: envDivPre,
           });
         }
-        if (legacyPfPreProjetoTipoId) {
-          orBranches.push({
-            tecnicoId: null,
-            coordenadoriaId: null,
-            tipoAgendamentoId: legacyPfPreProjetoTipoId,
-          });
-        }
         pontoFocalWhere = { OR: orBranches };
       } else {
         pontoFocalWhere = {
@@ -1665,7 +1921,7 @@ export class AgendamentosService {
       }
     }
 
-    const searchParams: Prisma.AgendamentoWhereInput = {
+    const filtrosPrincipais: Prisma.AgendamentoWhereInput = {
       ...(busca && {
         OR: [
           { municipe: { contains: busca } },
@@ -1690,10 +1946,26 @@ export class AgendamentosService {
       ...(coordenadoriaId && !filtroDivisaoTecnico && {
         coordenadoriaId,
       }),
-      ...(tecnicoId && {
+      ...(escopoTecLista?.modo === 'arthur' && {
+        OR: [
+          { tecnicoId: escopoTecLista.usuarioId },
+          { divisaoId: escopoTecLista.divisaoArthurId },
+        ],
+      }),
+      ...(escopoTecLista?.modo === 'proprio' && {
+        tecnicoId: escopoTecLista.usuarioId,
+      }),
+      ...(tecnicoId && !escopoTecLista && {
         tecnicoId,
       }),
       ...pontoFocalWhere,
+    };
+
+    const searchParams: Prisma.AgendamentoWhereInput = {
+      AND: [
+        filtrosPrincipais,
+        AgendamentosService.whereExcluirPreProjetoArthurNaListaAgendamentos(),
+      ],
     };
 
     const tipoFiltro =
@@ -1702,6 +1974,8 @@ export class AgendamentosService {
         : undefined;
 
     if (tipoFiltro) {
+      const preProjetoTipoIdExcluir =
+        await this.getPreProjetoTipoAgendamentoId();
       const whereSql = this.montarWhereSqlBuscarTudo(
         busca,
         status,
@@ -1710,12 +1984,15 @@ export class AgendamentosService {
         filtroCoordenadoria,
         coordenadoriaId,
         tecnicoId,
+        escopoTecLista?.modo === 'arthur'
+          ? escopoTecLista.divisaoArthurId
+          : undefined,
         filtroDivisaoTecnico,
         usuarioLogado?.permissao === 'PONTO_FOCAL'
           ? filtroPFCoordSemTecnico
           : undefined,
         usuarioLogado?.permissao === 'PONTO_FOCAL' ? envDivPre : undefined,
-        legacyPfPreProjetoTipoId,
+        preProjetoTipoIdExcluir ?? null,
         tipoFiltro,
       );
 
@@ -1838,6 +2115,9 @@ export class AgendamentosService {
     let filtroTecnico: string | undefined;
     let filtroDivisaoTecnicoDia: string | undefined;
     let filtroPFCoordDia: string | undefined;
+    let escopoTecDia:
+      | ReturnType<AgendamentosService['escopoListaAgendamentosParaTec']>
+      | undefined;
 
     if (usuarioLogado) {
       if (usuarioLogado.permissao === 'PONTO_FOCAL') {
@@ -1851,7 +2131,18 @@ export class AgendamentosService {
         const divisaoIdLogado = (usuarioLogado as any).divisaoId;
         if (divisaoIdLogado) filtroDivisaoTecnicoDia = divisaoIdLogado;
       } else if (usuarioLogado.permissao === 'TEC') {
-        filtroTecnico = usuarioLogado.id;
+        const escTecDia = this.escopoListaAgendamentosParaTec(usuarioLogado);
+        if (escTecDia.modo === 'dev_impersona_tec_sem_divisao') {
+          return [];
+        }
+        if (escTecDia.modo === 'dev_impersona_tec') {
+          filtroDivisaoTecnicoDia = escTecDia.divisaoId;
+        } else {
+          escopoTecDia = escTecDia;
+          if (escTecDia.modo === 'proprio') {
+            filtroTecnico = escTecDia.usuarioId;
+          }
+        }
       } else if (usuarioLogado.permissao === 'DEV') {
         const coordIdLogado = await this.coordenadoriaIdDoUsuarioLogado(
           usuarioLogado,
@@ -1879,15 +2170,7 @@ export class AgendamentosService {
       usuarioLogado?.permissao === 'PONTO_FOCAL' &&
       filtroPFCoordDia
     ) {
-      const envCoordPre = this.coordenadoriaPreProjetosEnv();
       const envDivPre = this.divisaoPreProjetosEnv();
-      let legacyTipo: string | null = null;
-      if (
-        envCoordPre &&
-        filtroPFCoordDia === envCoordPre
-      ) {
-        legacyTipo = await this.getPreProjetoTipoAgendamentoId();
-      }
       const orBranches: Prisma.AgendamentoWhereInput[] = [
         { tecnico: { divisaoId: filtroDivisaoTecnicoDia } },
         { divisaoId: filtroDivisaoTecnicoDia },
@@ -1899,13 +2182,6 @@ export class AgendamentosService {
           divisaoId: envDivPre,
         });
       }
-      if (legacyTipo) {
-        orBranches.push({
-          tecnicoId: null,
-          coordenadoriaId: null,
-          tipoAgendamentoId: legacyTipo,
-        });
-      }
       whereClause.OR = orBranches;
     } else if (filtroDivisaoTecnicoDia) {
       whereClause.OR = [
@@ -1914,12 +2190,24 @@ export class AgendamentosService {
       ];
     }
 
-    if (filtroTecnico) {
+    if (escopoTecDia?.modo === 'arthur') {
+      whereClause.OR = [
+        { tecnicoId: escopoTecDia.usuarioId },
+        { divisaoId: escopoTecDia.divisaoArthurId },
+      ];
+    } else if (filtroTecnico) {
       whereClause.tecnicoId = filtroTecnico;
     }
 
+    const whereDiaFinal: Prisma.AgendamentoWhereInput = {
+      AND: [
+        whereClause as Prisma.AgendamentoWhereInput,
+        AgendamentosService.whereExcluirPreProjetoArthurNaListaAgendamentos(),
+      ],
+    };
+
     const agendamentos = await this.prisma.agendamento.findMany({
-      where: whereClause,
+      where: whereDiaFinal,
       orderBy: { dataHora: 'asc' },
       include: {
         tipoAgendamento: true,
@@ -1977,7 +2265,13 @@ export class AgendamentosService {
     // Busca o agendamento atual para validações
     const agendamentoAtual = await this.prisma.agendamento.findUnique({
       where: { id },
-      select: { coordenadoriaId: true },
+      select: {
+        coordenadoriaId: true,
+        status: true,
+        dataHora: true,
+        processo: true,
+        tipoAgendamento: { select: { texto: true } },
+      },
     });
 
     if (!agendamentoAtual) {
@@ -2158,6 +2452,37 @@ export class AgendamentosService {
         },
       },
     });
+
+    const tipoPreArthur =
+      (agendamentoAtual.tipoAgendamento?.texto ?? '').trim() ===
+      PRE_PROJETO_TIPO_AGENDAMENTO_TEXTO;
+    const passouParaAgendado =
+      updateAgendamentoDto.status === StatusAgendamento.AGENDADO &&
+      agendamentoAtual.status === StatusAgendamento.SOLICITADO;
+    if (tipoPreArthur && passouParaAgendado) {
+      const proc = (agendamentoAtualizado.processo ?? '').trim().toUpperCase();
+      const sol = await this.prisma.solicitacaoPreProjetoArthurSaboya.findFirst({
+        where: {
+          OR: [
+            { agendamentoId: id },
+            ...(proc.startsWith('PP-') ? [{ protocolo: proc }] : []),
+          ],
+        },
+        select: { id: true },
+      });
+      if (sol) {
+        const dataRef = agendamentoAtualizado.dataHora;
+        await this.prisma.solicitacaoPreProjetoArthurSaboyaMensagem.create({
+          data: {
+            solicitacaoId: sol.id,
+            autor: AutorMensagemPreProjetoArthurSaboya.SISTEMA,
+            corpo: `O atendimento técnico foi agendado para o dia ${this.formatarDataHoraSaoPaulo(
+              dataRef,
+            )}. O atendimento será realizado de forma online, por meio do link enviado para o seu e-mail. Caso não possa comparecer, solicitamos que cancele o agendamento pelo botão Cancelar Atendimento.`,
+          },
+        });
+      }
+    }
 
     return agendamentoAtualizado as AgendamentoResponseDTO;
   }
@@ -3264,6 +3589,8 @@ export class AgendamentosService {
     let filtroCoordenadoria: string | undefined;
     let filtroDivisaoTecnico: string | undefined;
     let filtroPFCoordDashboard: string | undefined;
+    let filtroTecnicoDashboard: { tecnicoId: string } | undefined;
+    let dashboardDevTecSemDivisao = false;
 
     if (usuarioLogado) {
       if (usuarioLogado.permissao === 'PONTO_FOCAL') {
@@ -3277,6 +3604,17 @@ export class AgendamentosService {
         }
       } else if (usuarioLogado.permissao === 'DIRETOR') {
         filtroDivisaoTecnico = (usuarioLogado as any).divisaoId ?? undefined;
+      } else if (usuarioLogado.permissao === 'TEC') {
+        const esc = this.escopoListaAgendamentosParaTec(usuarioLogado);
+        if (esc.modo === 'dev_impersona_tec_sem_divisao') {
+          dashboardDevTecSemDivisao = true;
+        } else if (esc.modo === 'dev_impersona_tec') {
+          filtroDivisaoTecnico = esc.divisaoId;
+        } else if (esc.modo === 'arthur') {
+          filtroDivisaoTecnico = esc.divisaoArthurId;
+        } else {
+          filtroTecnicoDashboard = { tecnicoId: esc.usuarioId };
+        }
       } else if (usuarioLogado.permissao === 'DEV') {
         const coordIdDev = await this.coordenadoriaIdDoUsuarioLogado(
           usuarioLogado,
@@ -3352,17 +3690,21 @@ export class AgendamentosService {
     const anoMin = new Date().getFullYear() - 5;
 
     let filtroPorTecnicoDivisao: Prisma.AgendamentoWhereInput;
-    if (
+    if (dashboardDevTecSemDivisao) {
+      filtroPorTecnicoDivisao = {
+        AND: [
+          { id: '00000000-0000-0000-0000-000000000000' },
+          { id: { not: '00000000-0000-0000-0000-000000000000' } },
+        ],
+      };
+    } else if (filtroTecnicoDashboard) {
+      filtroPorTecnicoDivisao = { ...filtroTecnicoDashboard };
+    } else if (
       usuarioLogado?.permissao === 'PONTO_FOCAL' &&
       filtroDivisaoTecnico &&
       filtroPFCoordDashboard
     ) {
-      const envCoordPre = this.coordenadoriaPreProjetosEnv();
       const envDivPre = this.divisaoPreProjetosEnv();
-      let legacyPfTipo: string | null = null;
-      if (envCoordPre && filtroPFCoordDashboard === envCoordPre) {
-        legacyPfTipo = await this.getPreProjetoTipoAgendamentoId();
-      }
       const orDash: Prisma.AgendamentoWhereInput[] = [
         { tecnico: { divisaoId: filtroDivisaoTecnico } },
         { divisaoId: filtroDivisaoTecnico },
@@ -3372,13 +3714,6 @@ export class AgendamentosService {
         orDash.push({
           coordenadoriaId: filtroPFCoordDashboard,
           divisaoId: envDivPre,
-        });
-      }
-      if (legacyPfTipo) {
-        orDash.push({
-          tecnicoId: null,
-          coordenadoriaId: null,
-          tipoAgendamentoId: legacyPfTipo,
         });
       }
       filtroPorTecnicoDivisao = { OR: orDash };
@@ -3400,8 +3735,26 @@ export class AgendamentosService {
     }
 
     const whereBase = {
-      dataHora: { gte: dataInicio, lte: dataFim },
-      ...filtroPorTecnicoDivisao,
+      AND: [
+        {
+          dataHora: { gte: dataInicio, lte: dataFim },
+          ...filtroPorTecnicoDivisao,
+        },
+        AgendamentosService.whereExcluirPreProjetoArthurNaListaAgendamentos(),
+      ],
+    };
+
+    const whereAnoHistorico = {
+      AND: [
+        {
+          dataHora: {
+            gte: new Date(anoMin, 0, 1),
+            lte: new Date(),
+          },
+          ...filtroPorTecnicoDivisao,
+        },
+        AgendamentosService.whereExcluirPreProjetoArthurNaListaAgendamentos(),
+      ],
     };
 
     const [
@@ -3434,13 +3787,7 @@ export class AgendamentosService {
         select: { dataHora: true },
       }),
       this.prisma.agendamento.findMany({
-        where: {
-          dataHora: {
-            gte: new Date(anoMin, 0, 1),
-            lte: new Date(),
-          },
-          ...filtroPorTecnicoDivisao,
-        },
+        where: whereAnoHistorico,
         select: { dataHora: true },
       }),
       this.prisma.agendamento.findMany({

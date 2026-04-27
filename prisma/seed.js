@@ -43,6 +43,7 @@ async function main() {
     });
     console.log(portaria);
     await seedEstrutura();
+    await seedArthurSaboyaCoordCapUsuarioTeste();
 }
 
 async function seedEstrutura() {
@@ -136,6 +137,76 @@ async function seedEstrutura() {
         });
     }
 }
+
+/** Mesmo UUID usado em `DIVISAO_ID_PRE_PROJETOS` no `.env` quando não definido no ambiente. */
+const DIVISAO_ARTHUR_SABOYA_ID_PADRAO =
+    "bd1faee4-8a4c-4259-847a-fc73d7d36bea";
+
+/**
+ * Coordenadoria CAP, divisão Sala Arthur Saboya (ligada ao CAP) e usuário de teste (login teste / teste01).
+ */
+async function seedArthurSaboyaCoordCapUsuarioTeste() {
+    const coordCap = await prisma.coordenadoria.upsert({
+        where: { sigla: "CAP" },
+        create: {
+            sigla: "CAP",
+            nome: "Coordenadoria de Apoio ao Planejamento",
+            email: "cap@agendamento.local",
+            status: true,
+        },
+        update: {
+            nome: "Coordenadoria de Apoio ao Planejamento",
+            email: "cap@agendamento.local",
+            status: true,
+        },
+    });
+    console.log("Coordenadoria CAP:", coordCap.sigla, coordCap.id);
+
+    const divisaoArthurId = (
+        process.env.DIVISAO_ID_PRE_PROJETOS || DIVISAO_ARTHUR_SABOYA_ID_PADRAO
+    ).trim();
+
+    const divisaoArthur = await prisma.divisao.upsert({
+        where: { sigla: "ARTHUR_SABOYA" },
+        create: {
+            id: divisaoArthurId,
+            sigla: "ARTHUR_SABOYA",
+            nome: "Sala Arthur Saboya",
+            coordenadoriaId: coordCap.id,
+            status: true,
+        },
+        update: {
+            nome: "Sala Arthur Saboya",
+            coordenadoriaId: coordCap.id,
+            status: true,
+        },
+    });
+    console.log("Divisão Arthur Saboya:", divisaoArthur.sigla, divisaoArthur.id);
+
+    const senhaTeste = bcryptjs_1.hashSync("teste01", 10);
+    const usuarioTeste = await prisma.usuario.upsert({
+        where: { login: "teste" },
+        create: {
+            login: "teste",
+            nome: "Usuário de teste",
+            email: "teste@agendamento.local",
+            senha: senhaTeste,
+            permissao: "PONTO_FOCAL",
+            status: true,
+            divisaoId: divisaoArthur.id,
+        },
+        update: {
+            nome: "Usuário de teste",
+            email: "teste@agendamento.local",
+            senha: senhaTeste,
+            permissao: "PONTO_FOCAL",
+            status: true,
+            divisaoId: divisaoArthur.id,
+        },
+    });
+    console.log("Usuário de teste:", usuarioTeste.login, "(senha: teste01)");
+}
+
 main()
     .then(async () => {
     await prisma.$disconnect();

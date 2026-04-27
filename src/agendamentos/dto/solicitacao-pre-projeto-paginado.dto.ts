@@ -66,6 +66,15 @@ export class SolicitacaoPreProjetoListItemDto {
   @ApiPropertyOptional()
   divisaoId?: string | null;
 
+  @ApiPropertyOptional()
+  tecnicoArthurId?: string | null;
+
+  @ApiPropertyOptional()
+  tecnicoArthurNome?: string | null;
+
+  @ApiPropertyOptional()
+  tecnicoArthurEmail?: string | null;
+
   /** Rótulo para exibição: sigla e nome da coordenadoria da solicitação ou da divisão. */
   @ApiPropertyOptional()
   coordenadoriaTexto?: string | null;

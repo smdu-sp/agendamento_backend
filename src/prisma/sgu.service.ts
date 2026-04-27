@@ -24,6 +24,7 @@ export class SguService extends PrismaClient implements OnModuleInit {
       .toLowerCase();
     if (!login) return null;
 
+    /** `cpUsuarioRede` no SGU já segue o mesmo formato do login local (ex.: dXXXXXX). */
     try {
       const rows = await this.$queryRaw<Array<{ sigla: string | null }>>`
         SELECT un.sigla AS sigla

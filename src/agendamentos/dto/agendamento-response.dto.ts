@@ -9,7 +9,18 @@ export type AgendamentoResponseDTO = Agendamento & {
     nome?: string | null;
     email?: string | null;
   } | null;
-  tecnico?: { id: string; nome: string; login: string } | null;
+  tecnico?: { id: string; nome: string; login: string; email?: string } | null;
+  /** Quando o agendamento está ligado a uma solicitação Arthur (ou casando por `processo` = protocolo). */
+  solicitacaoPreProjetoArthurSaboya?: {
+    protocolo?: string;
+    tecnicoArthurId?: string | null;
+    tecnicoArthur?: {
+      id: string;
+      nome: string;
+      login: string;
+      email: string;
+    } | null;
+  } | null;
 };
 
 export interface AgendamentoPaginadoResponseDTO {

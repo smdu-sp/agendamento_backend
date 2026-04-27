@@ -95,7 +95,7 @@ export class UsuariosController {
   @Get('buscar-tecnicos-por-coordenadoria/:coordenadoriaId')
   buscarTecnicosPorCoordenadoria(
     @Param('coordenadoriaId') coordenadoriaId: string,
-  ): Promise<{ id: string; nome: string; login: string }[]> {
+  ): Promise<{ id: string; nome: string; login: string; email: string }[]> {
     return this.usuariosService.buscarTecnicosPorCoordenadoria(coordenadoriaId);
   }
 
@@ -104,7 +104,7 @@ export class UsuariosController {
   buscarTecnicosPorDivisao(
     @Param('divisaoId') divisaoId: string,
     @UsuarioAtual() usuario?: Usuario,
-  ): Promise<{ id: string; nome: string; login: string }[]> {
+  ): Promise<{ id: string; nome: string; login: string; email: string }[]> {
     return this.usuariosService.buscarTecnicosPorDivisao(divisaoId, usuario);
   }
 
@@ -112,7 +112,7 @@ export class UsuariosController {
   @Get('buscar-tecnicos-arthur-saboya')
   buscarTecnicosArthurSaboya(
     @UsuarioAtual() usuario?: Usuario,
-  ): Promise<{ id: string; nome: string; login: string }[]> {
+  ): Promise<{ id: string; nome: string; login: string; email: string }[]> {
     return this.usuariosService.buscarTecnicosArthurSaboya(usuario);
   }
 

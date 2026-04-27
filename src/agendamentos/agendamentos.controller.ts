@@ -161,7 +161,25 @@ export class AgendamentosController {
     );
   }
 
-  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR', 'TEC')
+  @IsPublic()
+  @UseGuards(MunicipeJwtAuthGuard)
+  @ApiBearerAuth()
+  @Post('municipes/pre-projetos-chamados/:id/cancelar-atendimento')
+  @ApiOperation({
+    summary:
+      'Portal munícipe — cancela atendimento agendado e notifica equipe da Sala Arthur Saboya.',
+  })
+  cancelarAtendimentoPreProjetosMunicipe(
+    @Param('id', ParseUUIDPipe) id: string,
+    @MunicipeAtual() municipe: MunicipeJwtPayload,
+  ) {
+    return this.agendamentosService.cancelarAtendimentoSolicitacaoMunicipe(
+      id,
+      municipe,
+    );
+  }
+
+  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR', 'TEC', 'ARTHUR_SABOYA')
   @Get('solicitacoes-pre-projetos/arthur-saboya/portal/buscar-tudo')
   @ApiOperation({
     summary:
@@ -194,7 +212,7 @@ export class AgendamentosController {
     );
   }
 
-  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR', 'TEC')
+  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR', 'TEC', 'ARTHUR_SABOYA')
   @Get('solicitacoes-pre-projetos/arthur-saboya/portal/:id')
   @ApiOperation({
     summary:
@@ -210,11 +228,11 @@ export class AgendamentosController {
     );
   }
 
-  @Permissoes('TEC')
+  @Permissoes('ADM', 'DEV', 'TEC', 'ARTHUR_SABOYA')
   @Post('solicitacoes-pre-projetos/arthur-saboya/portal/:id/mensagens')
   @ApiOperation({
     summary:
-      'Portal Arthur Saboya — envia mensagem no chamado (somente técnico da Sala Arthur Saboya).',
+      'Portal Arthur Saboya — envia mensagem no chamado (técnico da Sala Arthur Saboya, ADM ou DEV).',
   })
   enviarMensagemPortalArthurSaboya(
     @Param('id') id: string,
@@ -228,7 +246,7 @@ export class AgendamentosController {
     );
   }
 
-  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL')
+  @Permissoes('ARTHUR_SABOYA')
   @Post(
     'solicitacoes-pre-projetos/arthur-saboya/portal/:id/confirmar-resposta-enviada',
   )
@@ -264,7 +282,7 @@ export class AgendamentosController {
     );
   }
 
-  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL')
+  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'ARTHUR_SABOYA')
   @Post(
     'solicitacoes-pre-projetos/arthur-saboya/portal/:id/criar-agendamento',
   )

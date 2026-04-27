@@ -63,8 +63,14 @@ export class UsuariosService {
     return match?.id;
   }
 
+  /**
+   * Preenche `divisaoId` do técnico/DEV a partir do SGU (sigla da unidade → divisão local).
+   * Opcionalmente, se `coordenadoriaIdImportacao` for informado e o SGU não achar unidade,
+   * usa a primeira divisão ativa dessa coordenadoria (útil na importação de planilha).
+   */
   async vincularDivisaoTecnicoPorLoginSeDisponivel(
     login: string | undefined,
+    coordenadoriaIdImportacao?: string,
   ): Promise<string | null> {
     const loginLimpo = String(login || '')
       .trim()
@@ -79,7 +85,19 @@ export class UsuariosService {
     if (usuario.divisaoId) return usuario.divisaoId;
     if (usuario.permissao !== 'TEC' && usuario.permissao !== 'DEV') return null;
 
-    const divisaoIdInferida = await this.inferirDivisaoIdPorLoginNoSgu(loginLimpo);
+    let divisaoIdInferida =
+      await this.inferirDivisaoIdPorLoginNoSgu(loginLimpo);
+    if (!divisaoIdInferida && coordenadoriaIdImportacao?.trim()) {
+      const divCoord = await this.prisma.divisao.findFirst({
+        where: {
+          coordenadoriaId: coordenadoriaIdImportacao.trim(),
+          status: true,
+        },
+        orderBy: { sigla: 'asc' },
+        select: { id: true },
+      });
+      divisaoIdInferida = divCoord?.id;
+    }
     if (!divisaoIdInferida) return null;
 
     await this.prisma.usuario.update({
@@ -187,7 +205,7 @@ export class UsuariosService {
 
   async buscarTecnicosPorCoordenadoria(
     coordenadoriaId: string,
-  ): Promise<{ id: string; nome: string; login: string }[]> {
+  ): Promise<{ id: string; nome: string; login: string; email: string }[]> {
     return this.prisma.usuario.findMany({
       where: {
         status: true,
@@ -198,14 +216,14 @@ export class UsuariosService {
         ],
       },
       orderBy: { nome: 'asc' },
-      select: { id: true, nome: true, login: true },
+      select: { id: true, nome: true, login: true, email: true },
     });
   }
 
   async buscarTecnicosPorDivisao(
     divisaoId: string,
     usuarioLogado?: UsuarioLogadoContext,
-  ): Promise<{ id: string; nome: string; login: string }[]> {
+  ): Promise<{ id: string; nome: string; login: string; email: string }[]> {
     if (
       usuarioLogado &&
       (usuarioLogado.permissao === 'PONTO_FOCAL' ||
@@ -218,7 +236,7 @@ export class UsuariosService {
       }
     }
 
-    const lista: { id: string; nome: string; login: string }[] =
+    const lista: { id: string; nome: string; login: string; email: string }[] =
       await this.prisma.usuario.findMany({
         where: {
           status: true,
@@ -229,14 +247,14 @@ export class UsuariosService {
           ],
         },
         orderBy: { nome: 'asc' },
-        select: { id: true, nome: true, login: true },
+        select: { id: true, nome: true, login: true, email: true },
       });
     return lista;
   }
 
   async buscarTecnicosArthurSaboya(
     usuarioLogado?: UsuarioLogadoContext,
-  ): Promise<{ id: string; nome: string; login: string }[]> {
+  ): Promise<{ id: string; nome: string; login: string; email: string }[]> {
     const divisaoArthur = process.env.DIVISAO_ID_PRE_PROJETOS?.trim();
     if (!divisaoArthur) {
       return [];
@@ -270,9 +288,6 @@ export class UsuariosService {
 
     // Ponto Focal e Coordenador só podem criar usuários na sua divisão
     let divisaoId = createUsuarioDto.divisaoId;
-    if (!divisaoId && permissao === 'TEC') {
-      divisaoId = await this.inferirDivisaoIdPorLoginNoSgu(createUsuarioDto.login);
-    }
     if (
       usuarioLogado.permissao === 'PONTO_FOCAL' ||
       usuarioLogado.permissao === 'COORDENADOR'
@@ -283,6 +298,8 @@ export class UsuariosService {
         );
       }
       divisaoId = usuarioLogado.divisaoId;
+    } else if (!divisaoId && permissao === 'TEC') {
+      divisaoId = await this.inferirDivisaoIdPorLoginNoSgu(createUsuarioDto.login);
     }
     const usuario: Usuario = await this.prisma.usuario.create({
       data: {
