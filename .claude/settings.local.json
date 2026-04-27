@@ -4,7 +4,8 @@
       "Read(//tmp/agendamento/**)",
       "Bash(cp -r /tmp/agendamento/project/* \"/c/Users/d854440/Sistemas/Agendamentos/agendamento_frontend/design-prototype/project/\")",
       "Bash(cp /tmp/agendamento/chats/chat1.md \"/c/Users/d854440/Sistemas/Agendamentos/agendamento_frontend/design-prototype/chats/\")",
-      "Bash(cp /tmp/agendamento/README.md \"/c/Users/d854440/Sistemas/Agendamentos/agendamento_frontend/design-prototype/\")"
+      "Bash(cp /tmp/agendamento/README.md \"/c/Users/d854440/Sistemas/Agendamentos/agendamento_frontend/design-prototype/\")",
+      "Bash(npx tsc *)"
     ]
   }
 }

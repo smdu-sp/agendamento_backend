@@ -129,7 +129,7 @@ export class AgendamentosService {
   /**
    * Converte RF para login (ex: 8544409 -> d854440)
    */
-  private rfParaLogin(rf: string): string {
+  private rfParaLogin(rf: string): string | null {
     if (!rf || rf.length < 6) return null;
     // Pega os primeiros 6 dígitos e adiciona "d" no início
     const seisDigitos = rf.substring(0, 6);
@@ -1763,6 +1763,7 @@ export class AgendamentosService {
         login: true,
         permissao: true,
         status: true,
+        divisaoId: true,
         divisao: { select: { coordenadoriaId: true } },
       },
     });
@@ -1779,6 +1780,59 @@ export class AgendamentosService {
         'O técnico informado não pertence à coordenadoria do chamado.',
       );
     }
+
+    const solDetalhes = await this.prisma.solicitacaoPreProjetoArthurSaboya.findUniqueOrThrow({
+      where: { id: s.id },
+      select: { dataAgendamento: true, agendamentoId: true, nome: true, email: true },
+    });
+
+    if (!solDetalhes.dataAgendamento) {
+      throw new BadRequestException(
+        'A solicitação não possui data de agendamento definida.',
+      );
+    }
+
+    const tipoId = await this.getPreProjetoTipoAgendamentoId();
+    const nomeTecnico = tecnicoCoord.nome ?? tecnicoCoord.login;
+
+    await this.prisma.$transaction(async (tx) => {
+      if (solDetalhes.agendamentoId) {
+        await tx.agendamento.update({
+          where: { id: solDetalhes.agendamentoId },
+          data: {
+            tecnicoId,
+            divisaoId: tecnicoCoord.divisaoId,
+          },
+        });
+      } else {
+        const novoAgendamento = await tx.agendamento.create({
+          data: {
+            municipe: solDetalhes.nome,
+            email: solDetalhes.email,
+            processo: s.protocolo,
+            dataHora: solDetalhes.dataAgendamento,
+            dataFim: this.calcularDataFim(solDetalhes.dataAgendamento, 60),
+            coordenadoriaId: s.coordenadoriaId,
+            divisaoId: tecnicoCoord.divisaoId,
+            tecnicoId,
+            tipoAgendamentoId: tipoId ?? undefined,
+            status: StatusAgendamento.AGENDADO,
+          },
+        });
+        await tx.solicitacaoPreProjetoArthurSaboya.update({
+          where: { id: s.id },
+          data: { agendamentoId: novoAgendamento.id },
+        });
+      }
+      await tx.solicitacaoPreProjetoArthurSaboyaMensagem.create({
+        data: {
+          solicitacaoId: s.id,
+          autor: AutorMensagemPreProjetoArthurSaboya.SISTEMA,
+          corpo: `Técnico da coordenadoria atribuído: ${nomeTecnico}.`,
+          usuarioId: usuario.id,
+        },
+      });
+    });
 
     const sel = this.solicitacaoPortalListSelect();
     const r = await this.prisma.solicitacaoPreProjetoArthurSaboya.findUniqueOrThrow(
@@ -2160,10 +2214,18 @@ export class AgendamentosService {
   async buscarDoDia(
     usuarioLogado?: Usuario,
   ): Promise<AgendamentoResponseDTO[]> {
-    const hoje = new Date();
-    hoje.setHours(0, 0, 0, 0);
-    const amanha = new Date(hoje);
-    amanha.setDate(amanha.getDate() + 1);
+    const agora = new Date();
+    const spParts = new Intl.DateTimeFormat('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(agora);
+    const spAno = Number(spParts.find((p) => p.type === 'year')!.value);
+    const spMes = Number(spParts.find((p) => p.type === 'month')!.value) - 1;
+    const spDia = Number(spParts.find((p) => p.type === 'day')!.value);
+    const hoje = instanteCivilSaoPaulo(spAno, spMes, spDia, 0, 0, 0);
+    const amanha = instanteCivilSaoPaulo(spAno, spMes, spDia + 1, 0, 0, 0);
 
     let filtroCoordenadoria: string | undefined;
     let filtroTecnico: string | undefined;
