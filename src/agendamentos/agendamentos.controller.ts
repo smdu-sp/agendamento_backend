@@ -26,6 +26,7 @@ import { SolicitacaoPreProjetoPaginadoDto } from './dto/solicitacao-pre-projeto-
 import { CriarAgendamentoSolicitacaoPreProjetoPortalDto } from './dto/criar-agendamento-solicitacao-pre-projeto-portal.dto';
 import { CriarMensagemSolicitacaoPreProjetoDto } from './dto/criar-mensagem-solicitacao-pre-projeto.dto';
 import { AvaliarSolicitacaoPreProjetoDto } from './dto/avaliar-solicitacao-pre-projeto.dto';
+import { AtribuirTecnicoCoordenadoriaSolicitacaoPreProjetoDto } from './dto/atribuir-tecnico-coordenadoria-solicitacao-pre-projeto.dto';
 import { StatusSolicitacaoPreProjeto } from '@prisma/client';
 import { Permissoes } from 'src/auth/decorators/permissoes.decorator';
 import { IsPublic } from 'src/auth/decorators/is-public.decorator';
@@ -160,7 +161,7 @@ export class AgendamentosController {
     );
   }
 
-  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL')
+  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR', 'TEC')
   @Get('solicitacoes-pre-projetos/arthur-saboya/portal/buscar-tudo')
   @ApiOperation({
     summary:
@@ -193,7 +194,7 @@ export class AgendamentosController {
     );
   }
 
-  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL')
+  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR', 'TEC')
   @Get('solicitacoes-pre-projetos/arthur-saboya/portal/:id')
   @ApiOperation({
     summary:
@@ -209,10 +210,11 @@ export class AgendamentosController {
     );
   }
 
-  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL')
+  @Permissoes('TEC')
   @Post('solicitacoes-pre-projetos/arthur-saboya/portal/:id/mensagens')
   @ApiOperation({
-    summary: 'Portal Arthur Saboya — envia mensagem como ponto focal.',
+    summary:
+      'Portal Arthur Saboya — envia mensagem no chamado (somente técnico da Sala Arthur Saboya).',
   })
   enviarMensagemPortalArthurSaboya(
     @Param('id') id: string,
@@ -278,6 +280,26 @@ export class AgendamentosController {
     return this.agendamentosService.portalArthurSaboyaCriarAgendamentoDaSolicitacao(
       id,
       dto,
+      usuario,
+    );
+  }
+
+  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
+  @Post(
+    'solicitacoes-pre-projetos/arthur-saboya/portal/:id/atribuir-tecnico-coordenadoria',
+  )
+  @ApiOperation({
+    summary:
+      'Portal Arthur Saboya — ponto focal/coordenador da coordenadoria atribui o técnico local no chamado encaminhado.',
+  })
+  portalArthurSaboyaAtribuirTecnicoCoordenadoria(
+    @Param('id') id: string,
+    @Body() dto: AtribuirTecnicoCoordenadoriaSolicitacaoPreProjetoDto,
+    @UsuarioAtual() usuario: Usuario,
+  ) {
+    return this.agendamentosService.portalArthurSaboyaAtribuirTecnicoCoordenadoria(
+      id,
+      dto.tecnicoId,
       usuario,
     );
   }

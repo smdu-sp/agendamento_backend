@@ -147,6 +147,7 @@ model SolicitacaoPreProjetoArthurSaboya {
   avaliacaoNota       Int?
   avaliacaoComentario String?  @db.Text
   avaliacaoEm         DateTime?
+  dataAgendamento     DateTime?
 
   coordenadoriaId String?
   divisaoId       String?

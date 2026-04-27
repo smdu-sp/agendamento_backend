@@ -53,6 +53,9 @@ export class SolicitacaoPreProjetoListItemDto {
   @ApiPropertyOptional()
   avaliacaoEm?: Date | null;
 
+  @ApiPropertyOptional()
+  dataAgendamento?: Date | null;
+
   /** E-mail da coordenadoria vinculada à divisão (ou da solicitação), para resposta institucional. */
   @ApiPropertyOptional()
   emailContatoDivisao?: string | null;
