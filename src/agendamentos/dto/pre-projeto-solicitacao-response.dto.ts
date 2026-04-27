@@ -6,7 +6,7 @@ export class PreProjetoSolicitacaoResponseDto {
 
   @ApiProperty({
     description:
-      'Protocolo amigável (ex.: PP-XXXXXXXX), igual ao exibido no portal.',
+      'Protocolo amigável (ex.: AS-202604001), igual ao exibido no portal.',
   })
   protocolo: string;
 }

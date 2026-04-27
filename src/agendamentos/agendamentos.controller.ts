@@ -216,7 +216,7 @@ export class AgendamentosController {
   @Get('solicitacoes-pre-projetos/arthur-saboya/portal/:id')
   @ApiOperation({
     summary:
-      'Portal Arthur Saboya — detalhe do chamado com mensagens (histórico GLPI). Parâmetro :id = UUID ou protocolo (ex.: PP-AB12CD34).',
+      'Portal Arthur Saboya — detalhe do chamado com mensagens (histórico GLPI). Parâmetro :id = UUID ou protocolo (ex.: AS-202604001).',
   })
   obterSolicitacaoPortalArthurSaboyaDetalhe(
     @Param('id') id: string,

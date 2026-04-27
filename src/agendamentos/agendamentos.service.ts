@@ -365,6 +365,16 @@ export class AgendamentosService {
     return `${byType('day')}/${byType('month')}/${byType('year')} às ${byType('hour')}:${byType('minute')}`;
   }
 
+  private static readonly REGEX_SOLUCIONADO_COM_AUTOR =
+    /^Status do chamado alterado para Solucionado por .+ em (\d{2}\/\d{2}\/\d{4}, às \d{2}:\d{2})$/;
+
+  private formatarMensagemSolucionadoParaMunicipe(corpo: string): string {
+    const texto = String(corpo || '').trim();
+    const match = texto.match(AgendamentosService.REGEX_SOLUCIONADO_COM_AUTOR);
+    if (!match?.[1]) return corpo;
+    return `Status do chamado alterado para Solucionado em ${match[1]}`;
+  }
+
   /**
    * Pré-projetos Arthur Saboya: fluxo em `solicitacoes_pre_projeto_arthur_saboya` / portal Pedidos,
    * não na listagem nem no dashboard de `agendamentos`.
@@ -478,10 +488,30 @@ export class AgendamentosService {
     return agendamento as AgendamentoResponseDTO;
   }
 
-  /** Mesmo formato exibido no portal (`PP-` + 8 hex do id sem hífens). */
-  private static protocoloPreProjetoDeId(id: string): string {
-    const hex = id.replace(/-/g, '');
-    return `PP-${hex.slice(0, 8).toUpperCase()}`;
+  /**
+   * Protocolo no formato AS-AAAAMMNNN (N = 001..999), sequencial por mês.
+   */
+  private async gerarProtocoloPreProjetoArthurSaboya(
+    tx: Prisma.TransactionClient,
+    dataRef: Date,
+  ): Promise<string> {
+    const ano = dataRef.getFullYear();
+    const mes = String(dataRef.getMonth() + 1).padStart(2, '0');
+    const prefixo = `AS-${ano}${mes}`;
+    const ultimo = await tx.solicitacaoPreProjetoArthurSaboya.findFirst({
+      where: { protocolo: { startsWith: prefixo } },
+      orderBy: { protocolo: 'desc' },
+      select: { protocolo: true },
+    });
+    const atual = ultimo?.protocolo?.slice(prefixo.length) ?? '000';
+    const numero = Number.parseInt(atual, 10);
+    const proximo = Number.isFinite(numero) ? numero + 1 : 1;
+    if (proximo > 999) {
+      throw new BadRequestException(
+        'Limite mensal de protocolos Arthur Saboya atingido (999).',
+      );
+    }
+    return `${prefixo}${String(proximo).padStart(3, '0')}`;
   }
 
   /**
@@ -517,9 +547,12 @@ export class AgendamentosService {
     );
 
     const id = randomUUID();
-    const protocolo = AgendamentosService.protocoloPreProjetoDeId(id);
 
     const row = await this.prisma.$transaction(async (tx) => {
+      const protocolo = await this.gerarProtocoloPreProjetoArthurSaboya(
+        tx,
+        new Date(),
+      );
       const created = await tx.solicitacaoPreProjetoArthurSaboya.create({
         data: {
           id,
@@ -1016,20 +1049,28 @@ export class AgendamentosService {
     const base = this.mapSolicitacaoRowToListItem(rest);
     const nomeSolic = base.nome;
     const mensagensDto: SolicitacaoPreProjetoMensagemDto[] = mensagens.map(
-      (m) => ({
-        id: m.id,
-        autor: m.autor,
-        corpo: m.corpo,
-        criadoEm: m.criadoEm,
-        nomeRemetente:
-          m.autor === AutorMensagemPreProjetoArthurSaboya.SISTEMA
-            ? 'Sistema'
-            : m.autor === AutorMensagemPreProjetoArthurSaboya.PONTO_FOCAL
-              ? ocultarNomeEquipeNoPortalMunicipe
-                ? 'Arthur Saboya'
-                : m.usuario?.nome ?? 'Equipe'
-              : m.municipeConta?.nome ?? nomeSolic,
-      }),
+      (m) => {
+        const corpoSistema = ocultarNomeEquipeNoPortalMunicipe
+          ? this.formatarMensagemSolucionadoParaMunicipe(m.corpo)
+          : m.corpo;
+        return {
+          id: m.id,
+          autor: m.autor,
+          corpo:
+            m.autor === AutorMensagemPreProjetoArthurSaboya.SISTEMA
+              ? corpoSistema
+              : m.corpo,
+          criadoEm: m.criadoEm,
+          nomeRemetente:
+            m.autor === AutorMensagemPreProjetoArthurSaboya.SISTEMA
+              ? 'Sistema'
+              : m.autor === AutorMensagemPreProjetoArthurSaboya.PONTO_FOCAL
+                ? ocultarNomeEquipeNoPortalMunicipe
+                  ? 'Arthur Saboya'
+                  : m.usuario?.nome ?? 'Equipe'
+                : m.municipeConta?.nome ?? nomeSolic,
+        };
+      },
     );
     return { ...base, mensagens: mensagensDto };
   }
@@ -1418,7 +1459,7 @@ export class AgendamentosService {
     };
   }
 
-  /** Id da solicitação (UUID) — se não casar, trata `ref` como `protocolo` (ex.: PP-AB12CD34). */
+  /** Id da solicitação (UUID) — se não casar, trata `ref` como `protocolo` (ex.: AS-202604001). */
   private static readonly REF_UUID_SOLICITACAO =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -1554,6 +1595,17 @@ export class AgendamentosService {
         'Só é possível concluir solicitações com status Solicitado ou Agendamento criado.',
       );
     }
+    const nomeResponsavel =
+      usuario.nomeSocial?.trim() || usuario.nome?.trim() || 'Equipe Arthur Saboya';
+    const dataHoraTexto = new Intl.DateTimeFormat('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(new Date());
     await this.prisma.$transaction(async (tx) => {
       await tx.solicitacaoPreProjetoArthurSaboya.update({
         where: { id: s.id },
@@ -1563,7 +1615,9 @@ export class AgendamentosService {
         data: {
           solicitacaoId: s.id,
           autor: AutorMensagemPreProjetoArthurSaboya.SISTEMA,
-          corpo: 'Status do chamado alterado para Solucionado.',
+          corpo:
+            `Status do chamado alterado para Solucionado por ${nomeResponsavel} ` +
+            `em ${dataHoraTexto.replace(' ', ', às ')}`,
         },
       });
     });
@@ -1673,7 +1727,7 @@ export class AgendamentosService {
           solicitacaoId: s.id,
           autor: AutorMensagemPreProjetoArthurSaboya.SISTEMA,
           corpo:
-            'O agendamento foi solicitado. Aguarde a confirmação via e-mail.',
+            'Agendamento efetuado. Verifique as informações no seu e-mail.',
         },
       });
     });
@@ -2465,7 +2519,9 @@ export class AgendamentosService {
         where: {
           OR: [
             { agendamentoId: id },
-            ...(proc.startsWith('PP-') ? [{ protocolo: proc }] : []),
+            ...(proc.startsWith('PP-') || proc.startsWith('AS-')
+              ? [{ protocolo: proc }]
+              : []),
           ],
         },
         select: { id: true },
