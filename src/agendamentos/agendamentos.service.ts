@@ -1212,7 +1212,7 @@ export class AgendamentosService {
       );
     }
 
-    if (perm === 'TEC' || perm === 'ARTHUR_SABOYA') {
+    if (perm === 'ARTHUR_SABOYA') {
       if (divSala && divUser && divUser === divSala) {
         return this.listarSolicitacoesPreProjetoComWhere(
           pagina,
@@ -1224,6 +1224,16 @@ export class AgendamentosService {
           statusFiltro,
         );
       }
+      return this.listarSolicitacoesPreProjetoComWhere(
+        pagina,
+        limite,
+        busca,
+        {},
+        statusFiltro,
+      );
+    }
+
+    if (perm === 'TEC') {
       const coordId = await this.coordenadoriaIdDoUsuarioLogado(usuarioLogado);
       if (!coordId) {
         throw new ForbiddenException(
@@ -1236,6 +1246,7 @@ export class AgendamentosService {
         busca,
         {
           coordenadoriaId: coordId,
+          agendamento: { is: { tecnicoId: usuarioLogado.id } },
         },
         statusFiltro ?? StatusSolicitacaoPreProjeto.AGENDAMENTO_CRIADO,
       );
@@ -1561,7 +1572,7 @@ export class AgendamentosService {
       return row;
     }
 
-    if (perm === 'TEC' || perm === 'ARTHUR_SABOYA') {
+    if (perm === 'ARTHUR_SABOYA') {
       if (divSala && divUser && divUser === divSala) {
         if (row.divisaoId !== divSala) {
           throw new ForbiddenException(
@@ -1574,6 +1585,25 @@ export class AgendamentosService {
       if (!coordId || !row.coordenadoriaId || row.coordenadoriaId !== coordId) {
         throw new ForbiddenException(
           'Sem permissão para operar solicitações fora da sua coordenadoria.',
+        );
+      }
+      return row;
+    }
+
+    if (perm === 'TEC') {
+      const coordId = await this.coordenadoriaIdDoUsuarioLogado(usuario);
+      if (!coordId || !row.coordenadoriaId || row.coordenadoriaId !== coordId) {
+        throw new ForbiddenException(
+          'Sem permissão para operar solicitações fora da sua coordenadoria.',
+        );
+      }
+      const vinculoAgendamento = await this.prisma.solicitacaoPreProjetoArthurSaboya.findUnique({
+        where: { id: row.id },
+        select: { agendamento: { select: { tecnicoId: true } } },
+      });
+      if (!vinculoAgendamento?.agendamento?.tecnicoId || vinculoAgendamento.agendamento.tecnicoId !== usuario.id) {
+        throw new ForbiddenException(
+          'Técnico pode acessar apenas solicitações atribuídas a ele.',
         );
       }
       return row;

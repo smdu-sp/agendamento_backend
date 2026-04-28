@@ -39,6 +39,18 @@ export class UsuariosService {
       .replace(/\s+/g, '');
   }
 
+  private normalizarPermissao(
+    permissao: unknown,
+  ): $Enums.Permissao | undefined {
+    if (typeof permissao !== 'string') return undefined;
+    const valor = permissao.trim();
+    if (!valor) return undefined;
+    const permissoesValidas = Object.values($Enums.Permissao) as string[];
+    return permissoesValidas.includes(valor)
+      ? (valor as $Enums.Permissao)
+      : undefined;
+  }
+
   private async inferirDivisaoIdPorLoginNoSgu(
     login: string | undefined,
   ): Promise<string | undefined> {
@@ -61,6 +73,31 @@ export class UsuariosService {
       (d) => this.normalizarSigla(d.sigla) === siglaNormalizada,
     );
     return match?.id;
+  }
+
+  private async obterDivisaoArthurSaboyaId(): Promise<string> {
+    const divisaoIdEnv = process.env.DIVISAO_ID_PRE_PROJETOS?.trim();
+    if (divisaoIdEnv) {
+      const divisaoEnv = await this.prisma.divisao.findUnique({
+        where: { id: divisaoIdEnv },
+        select: { id: true },
+      });
+      if (divisaoEnv?.id) return divisaoEnv.id;
+    }
+
+    const divisaoArthur = await this.prisma.divisao.findFirst({
+      where: {
+        status: true,
+        coordenadoria: { sigla: 'CAP' },
+        OR: [{ sigla: 'ARTHUR_SABOYA' }, { sigla: 'ATHURSABOYA' }],
+      },
+      select: { id: true },
+    });
+    if (divisaoArthur?.id) return divisaoArthur.id;
+
+    throw new NotFoundException(
+      'Divisão padrão do Arthur Saboya não encontrada (CAP/ATHURSABOYA).',
+    );
   }
 
   /**
@@ -283,8 +320,13 @@ export class UsuariosService {
       if (loguser) throw new ForbiddenException('Login já cadastrado.');
       throw new ForbiddenException('Email já cadastrado.');
     }
-    let { permissao } = createUsuarioDto;
-    permissao = this.validaPermissaoCriador(permissao, usuarioLogado.permissao);
+    const permissaoSolicitada =
+      this.normalizarPermissao(createUsuarioDto.permissao) ??
+      $Enums.Permissao.PORTARIA;
+    const permissao = this.validaPermissaoCriador(
+      permissaoSolicitada,
+      usuarioLogado.permissao,
+    );
 
     // Ponto Focal e Coordenador só podem criar usuários na sua divisão
     let divisaoId = createUsuarioDto.divisaoId;
@@ -298,6 +340,8 @@ export class UsuariosService {
         );
       }
       divisaoId = usuarioLogado.divisaoId;
+    } else if (permissao === 'ARTHUR_SABOYA') {
+      divisaoId = await this.obterDivisaoArthurSaboyaId();
     } else if (!divisaoId && permissao === 'TEC') {
       divisaoId = await this.inferirDivisaoIdPorLoginNoSgu(createUsuarioDto.login);
     }
@@ -465,25 +509,24 @@ export class UsuariosService {
       ...rest
     } = updateUsuarioDto;
     // Ponto Focal e Coordenador não podem alterar a divisão do usuário
-    const divisaoIdFinal =
+    let divisaoIdFinal =
       usuarioLogado.permissao === 'PONTO_FOCAL' ||
       usuarioLogado.permissao === 'COORDENADOR'
         ? usuarioAntes.divisaoId
         : divisaoDto !== undefined
           ? divisaoDto
           : usuarioAntes.divisaoId;
-    const permissaoFinal =
-      permissaoDto && permissaoDto.toString().trim() !== ''
-        ? this.validaPermissaoCriador(permissaoDto, usuarioLogado.permissao)
-        : usuarioAntes.permissao;
-    // Garante valor válido do enum (evita '' no Prisma; corrige registros com permissao vazia no banco)
-    const permissaoValida =
-      permissaoFinal && permissaoFinal.toString().trim() !== ''
-        ? permissaoFinal
-        : usuarioAntes.permissao &&
-            usuarioAntes.permissao.toString().trim() !== ''
-          ? usuarioAntes.permissao
-          : $Enums.Permissao.PORTARIA;
+    const permissaoDtoNormalizada = this.normalizarPermissao(permissaoDto);
+    const permissaoAnteriorNormalizada = this.normalizarPermissao(
+      usuarioAntes.permissao,
+    );
+    const permissaoBase = permissaoDtoNormalizada ?? permissaoAnteriorNormalizada;
+    const permissaoValida = permissaoBase
+      ? this.validaPermissaoCriador(permissaoBase, usuarioLogado.permissao)
+      : $Enums.Permissao.PORTARIA;
+    if (permissaoValida === 'ARTHUR_SABOYA') {
+      divisaoIdFinal = await this.obterDivisaoArthurSaboyaId();
+    }
     await this.prisma.usuario.update({
       data: {
         ...rest,
