@@ -353,18 +353,8 @@ export class AgendamentosService {
   }
 
   private formatarDataHoraSaoPaulo(data: Date): string {
-    const parts = new Intl.DateTimeFormat('pt-BR', {
-      timeZone: 'America/Sao_Paulo',
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).formatToParts(data);
-    const byType = (type: string) =>
-      parts.find((p) => p.type === type)?.value ?? '';
-    return `${byType('day')}/${byType('month')}/${byType('year')} às ${byType('hour')}:${byType('minute')}`;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${pad(data.getUTCDate())}/${pad(data.getUTCMonth() + 1)}/${data.getUTCFullYear()} às ${pad(data.getUTCHours())}:${pad(data.getUTCMinutes())}`;
   }
 
   private static readonly REGEX_SOLUCIONADO_COM_AUTOR =

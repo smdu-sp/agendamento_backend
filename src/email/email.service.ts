@@ -85,11 +85,11 @@ export class EmailService {
     if (destinatariosUnicos.length === 0) return;
 
     const dataHora = params.dataAgendamento
-      ? new Intl.DateTimeFormat('pt-BR', {
-          timeZone: 'America/Sao_Paulo',
-          dateStyle: 'short',
-          timeStyle: 'short',
-        }).format(params.dataAgendamento)
+      ? (() => {
+          const d = params.dataAgendamento!;
+          const pad = (n: number) => String(n).padStart(2, '0');
+          return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}/${d.getUTCFullYear()} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+        })()
       : 'não informada';
 
     const assunto = `[Arthur Saboya] Cancelamento de atendimento — ${params.protocolo}`;
