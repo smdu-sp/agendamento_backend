@@ -1,5 +1,5 @@
 -- CreateTable
-CREATE TABLE `divisoes` (
+CREATE TABLE IF NOT EXISTS `divisoes` (
     `id` VARCHAR(191) NOT NULL,
     `sigla` VARCHAR(191) NOT NULL,
     `nome` VARCHAR(191) NULL,
@@ -19,7 +19,7 @@ ALTER TABLE `usuarios` ADD COLUMN `divisaoId` VARCHAR(191) NULL;
 -- (A divisao correspondente não existe ainda; isso apenas preserva a referência caso seja necessário migrar manualmente)
 
 -- RemoveColumn: remove coordenadoriaId de usuarios
-ALTER TABLE `usuarios` DROP FOREIGN KEY IF EXISTS `usuarios_coordenadoriaId_fkey`;
+ALTER TABLE `usuarios` DROP FOREIGN KEY `usuarios_coordenadoriaId_fkey`;
 ALTER TABLE `usuarios` DROP COLUMN `coordenadoriaId`;
 
 -- AddForeignKey

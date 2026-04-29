@@ -14,6 +14,7 @@ RUN npm prune --production
 FROM ${BASE_IMAGE} AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+RUN apk add --no-cache openssl
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY package.json ./
