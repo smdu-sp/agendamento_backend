@@ -13,7 +13,11 @@ export class SguService extends PrismaClient implements OnModuleInit {
   }
 
   async onModuleInit() {
-    await this.$connect();
+    try {
+      await this.$connect();
+    } catch (err) {
+      console.warn('[SguService] Banco SGU inacessível na inicialização:', (err as Error).message);
+    }
   }
 
   async buscarSiglaUnidadePorUsuarioRede(
