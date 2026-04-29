@@ -66,4 +66,15 @@ export class AuthController {
   usuarioAtual(@UsuarioAtual() usuario: Usuario) {
     return this.usuariosService.buscarPorId(usuario.id);
   }
+
+  @Get('debug/time')
+  @IsPublic()
+  debugTime() {
+    const now = new Date();
+    return {
+      iso: now.toISOString(),
+      utcOffset: -now.getTimezoneOffset() / 60,
+      tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    };
+  }
 }
