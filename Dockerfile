@@ -2,6 +2,7 @@ ARG BASE_IMAGE=mirror.gcr.io/library/node:22-alpine
 FROM ${BASE_IMAGE} AS builder
 WORKDIR /app
 RUN apk add --no-cache openssl
+ENV PRISMA_CLI_BINARY_TARGETS=linux-musl-openssl-3.0.x
 COPY package.json package-lock.json* ./
 RUN if [ -f package-lock.json ]; then npm ci; else npm i; fi
 COPY prisma ./prisma
