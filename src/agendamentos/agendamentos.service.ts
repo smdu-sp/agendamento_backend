@@ -581,7 +581,14 @@ export class AgendamentosService {
       return created;
     });
 
-    return { id: row.id, protocolo: row.protocolo };
+    const emailEnviado = await this.emailService.enviarNovoChamadoPreProjeto({
+      nome: row.nome,
+      email: row.email,
+      protocolo: row.protocolo,
+      solicitacaoId: row.id,
+    });
+
+    return { id: row.id, protocolo: row.protocolo, emailEnviado };
   }
 
   private async resolverMunicipeContaIdParaAbertura(
@@ -1006,7 +1013,14 @@ export class AgendamentosService {
         select: this.solicitacaoPortalDetalheSelect(),
       },
     );
-    return this.mapSolicitacaoDetalheComMensagens(row);
+    const resultado = this.mapSolicitacaoDetalheComMensagens(row);
+    resultado.emailEnviado = await this.emailService.enviarNovaMensagemNaSolicitacao({
+      nome: (row as any).nome,
+      email: (row as any).email,
+      protocolo: (row as any).protocolo,
+      solicitacaoId: s.id,
+    });
+    return resultado;
   }
 
   private solicitacaoPortalDetalheSelect(): Prisma.SolicitacaoPreProjetoArthurSaboyaSelect {
@@ -1757,7 +1771,17 @@ export class AgendamentosService {
     const r = await this.prisma.solicitacaoPreProjetoArthurSaboya.findUniqueOrThrow(
       { where: { id: s.id }, select: sel },
     );
-    return this.mapSolicitacaoRowToListItem(r);
+    const resultado = this.mapSolicitacaoRowToListItem(r);
+    if ((r as any).dataAgendamento) {
+      resultado.emailEnviado = await this.emailService.enviarAgendamentoConfirmadoMunicipe({
+        nome: (r as any).nome,
+        email: (r as any).email,
+        protocolo: (r as any).protocolo,
+        solicitacaoId: s.id,
+        dataAgendamento: (r as any).dataAgendamento,
+      });
+    }
+    return resultado;
   }
 
   async portalArthurSaboyaAtribuirTecnicoCoordenadoria(
@@ -1783,6 +1807,7 @@ export class AgendamentosService {
         id: true,
         nome: true,
         login: true,
+        email: true,
         permissao: true,
         status: true,
         divisaoId: true,
@@ -1860,7 +1885,18 @@ export class AgendamentosService {
     const r = await this.prisma.solicitacaoPreProjetoArthurSaboya.findUniqueOrThrow(
       { where: { id: s.id }, select: sel },
     );
-    return this.mapSolicitacaoRowToListItem(r);
+    const resultado = this.mapSolicitacaoRowToListItem(r);
+    const emailTecnico = tecnicoCoord.email?.trim();
+    if (emailTecnico && solDetalhes.dataAgendamento) {
+      resultado.emailEnviado = await this.emailService.enviarAtribuicaoTecnicoArthurSaboya({
+        nomeTecnico: nomeTecnico,
+        emailTecnico,
+        protocolo: s.protocolo,
+        nomeMunicipe: solDetalhes.nome,
+        dataAgendamento: solDetalhes.dataAgendamento,
+      });
+    }
+    return resultado;
   }
 
   /**

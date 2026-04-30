@@ -41,7 +41,7 @@ export class MunicipesAuthService {
     );
   }
 
-  async cadastrar(dto: CadastroMunicipeDto): Promise<{ access_token: string }> {
+  async cadastrar(dto: CadastroMunicipeDto): Promise<{ access_token: string; emailEnviado: boolean }> {
     const email = dto.email.trim().toLowerCase();
     const nome = dto.nome.trim();
     if (!nome) throw new BadRequestException('Nome é obrigatório.');
@@ -69,14 +69,12 @@ export class MunicipesAuthService {
     });
 
     const access_token = await this.gerarTokenAcesso(conta);
+    const emailEnviado = await this.emailService.enviarConfirmacaoCadastro(
+      conta.nome,
+      conta.email,
+    );
 
-    this.emailService
-      .enviarConfirmacaoCadastro(conta.nome, conta.email)
-      .catch((error) =>
-        console.error('[MUNICIPE] Falha ao enviar e-mail de cadastro:', error),
-      );
-
-    return { access_token };
+    return { access_token, emailEnviado };
   }
 
   async login(dto: LoginMunicipeDto): Promise<{ access_token: string }> {

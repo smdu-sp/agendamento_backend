@@ -1,25 +1,25 @@
-import * as nodemailer from 'nodemailer';
+const mailApiUrl = (process.env.MAIL_API_URL || 'http://localhost:3501').replace(/\/$/, '');
 
-const mailHost = process.env.MAIL_HOST || process.env.SMTP_HOST;
-const mailPort = process.env.MAIL_PORT || process.env.SMTP_PORT;
-const mailUser = process.env.MAIL_USER || process.env.SMTP_USER;
-const mailPass = process.env.MAIL_PASS || process.env.SMTP_PASS;
-const mailSecure =
-  (process.env.MAIL_SECURE || process.env.SMTP_SECURE || 'false').toLowerCase() ===
-  'true';
+export const transporter = {
+  async sendMail(options: {
+    from: string;
+    to: string | string[];
+    subject: string;
+    text?: string;
+    html?: string;
+    bcc?: string | string[];
+  }) {
+    const response = await fetch(`${mailApiUrl}/send-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(options),
+    });
 
-if (!mailHost || !mailPort || !mailUser || !mailPass) {
-  throw new Error(
-    'As variáveis de ambiente do SMTP não estão definidas corretamente. Configure MAIL_HOST, MAIL_PORT, MAIL_USER e MAIL_PASS.',
-  );
-}
+    if (!response.ok) {
+      const body = await response.text().catch(() => response.statusText);
+      throw new Error(`mail-api retornou ${response.status}: ${body}`);
+    }
 
-export const transporter = nodemailer.createTransport({
-  host: mailHost,
-  port: Number(mailPort),
-  secure: mailSecure,
-  auth: {
-    user: mailUser,
-    pass: mailPass,
+    return response.json();
   },
-});
+};
