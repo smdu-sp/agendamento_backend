@@ -53,6 +53,7 @@ import { CoordenadoriasService } from 'src/coordenadorias/coordenadorias.service
 import { EmailService } from 'src/email/email.service';
 import { instanteCivilSaoPaulo } from './sao-paulo-datetime.util';
 import type { MunicipeJwtPayload } from 'src/auth/guards/municipe-jwt-auth.guard';
+import { PreProjetoChatGateway } from './pre-projeto-chat.gateway';
 
 @Injectable()
 export class AgendamentosService {
@@ -68,6 +69,7 @@ export class AgendamentosService {
     private coordenadoriasService: CoordenadoriasService,
     private emailService: EmailService,
     private jwtService: JwtService,
+    private preProjetoChatGateway: PreProjetoChatGateway,
   ) {}
 
   /** UUID da coordenadoria responsável pelas solicitações públicas de pré-projetos (env). */
@@ -756,7 +758,12 @@ export class AgendamentosService {
         municipeContaId: municipe.id,
       },
     });
-    return this.obterSolicitacaoDetalheMunicipe(id, municipe);
+    const detalhe = await this.obterSolicitacaoDetalheMunicipe(id, municipe);
+    this.preProjetoChatGateway.publicarAtualizacao({
+      id: detalhe.id,
+      protocolo: detalhe.protocolo,
+    });
+    return detalhe;
   }
 
   async marcarSolicitacaoMunicipeComoSolucionada(
@@ -792,7 +799,12 @@ export class AgendamentosService {
       });
     });
 
-    return this.obterSolicitacaoDetalheMunicipe(id, municipe);
+    const detalhe = await this.obterSolicitacaoDetalheMunicipe(id, municipe);
+    this.preProjetoChatGateway.publicarAtualizacao({
+      id: detalhe.id,
+      protocolo: detalhe.protocolo,
+    });
+    return detalhe;
   }
 
   private async notificarCancelamentoAtendimentoMunicipe(params: {
@@ -927,7 +939,12 @@ export class AgendamentosService {
       dataAgendamento: solicitacao.dataAgendamento ?? null,
     });
 
-    return this.obterSolicitacaoDetalheMunicipe(id, municipe);
+    const detalhe = await this.obterSolicitacaoDetalheMunicipe(id, municipe);
+    this.preProjetoChatGateway.publicarAtualizacao({
+      id: detalhe.id,
+      protocolo: detalhe.protocolo,
+    });
+    return detalhe;
   }
 
   async avaliarSolicitacaoPreProjetoMunicipe(
@@ -982,7 +999,12 @@ export class AgendamentosService {
       });
     });
 
-    return this.obterSolicitacaoDetalheMunicipe(id, municipe);
+    const detalhe = await this.obterSolicitacaoDetalheMunicipe(id, municipe);
+    this.preProjetoChatGateway.publicarAtualizacao({
+      id: detalhe.id,
+      protocolo: detalhe.protocolo,
+    });
+    return detalhe;
   }
 
   async obterSolicitacaoPortalDetalheComMensagens(
@@ -1010,13 +1032,17 @@ export class AgendamentosService {
     }
     const divSala = this.divisaoPreProjetosEnv();
     const divUser = (usuario as any).divisaoId as string | undefined;
+    const permReal = (usuario as any).permissaoReal as string | undefined;
     if (!divSala) {
       throw new ForbiddenException(
         'Divisão da Sala Arthur Saboya não configurada no sistema.',
       );
     }
     const podeComoStaffInterno =
-      usuario.permissao === 'DEV' || usuario.permissao === 'ADM';
+      usuario.permissao === 'DEV' ||
+      usuario.permissao === 'ADM' ||
+      permReal === 'DEV' ||
+      permReal === 'ADM';
     const podeComoTecnicoSala =
       (usuario.permissao === 'TEC' || usuario.permissao === 'ARTHUR_SABOYA') &&
       !!divUser &&
@@ -1066,6 +1092,10 @@ export class AgendamentosService {
       email: (row as any).email,
       protocolo: (row as any).protocolo,
       solicitacaoId: s.id,
+    });
+    this.preProjetoChatGateway.publicarAtualizacao({
+      id: resultado.id,
+      protocolo: resultado.protocolo,
     });
     return resultado;
   }
@@ -1673,9 +1703,9 @@ export class AgendamentosService {
     refUuidOuProtocolo: string,
     usuario: Usuario,
   ): Promise<SolicitacaoPreProjetoListItemDto> {
-    if (usuario.permissao !== 'ARTHUR_SABOYA') {
+    if (usuario.permissao !== 'ARTHUR_SABOYA' && usuario.permissao !== 'DEV') {
       throw new ForbiddenException(
-        'Apenas o perfil Arthur_saboya pode marcar chamado como solucionado.',
+        'Apenas os perfis Arthur_saboya e DEV podem marcar chamado como solucionado.',
       );
     }
     const s = await this.assertSolicitacaoPortalArthurSaboya(refUuidOuProtocolo, usuario);
@@ -1717,7 +1747,12 @@ export class AgendamentosService {
     const r = await this.prisma.solicitacaoPreProjetoArthurSaboya.findUniqueOrThrow(
       { where: { id: s.id }, select: sel },
     );
-    return this.mapSolicitacaoRowToListItem(r);
+    const resultado = this.mapSolicitacaoRowToListItem(r);
+    this.preProjetoChatGateway.publicarAtualizacao({
+      id: resultado.id,
+      protocolo: resultado.protocolo,
+    });
+    return resultado;
   }
 
   async portalArthurSaboyaMarcarAguardandoData(
@@ -1748,7 +1783,12 @@ export class AgendamentosService {
     const r = await this.prisma.solicitacaoPreProjetoArthurSaboya.findUniqueOrThrow(
       { where: { id: s.id }, select: sel },
     );
-    return this.mapSolicitacaoRowToListItem(r);
+    const resultado = this.mapSolicitacaoRowToListItem(r);
+    this.preProjetoChatGateway.publicarAtualizacao({
+      id: resultado.id,
+      protocolo: resultado.protocolo,
+    });
+    return resultado;
   }
 
   async portalArthurSaboyaCriarAgendamentoDaSolicitacao(
@@ -1834,6 +1874,10 @@ export class AgendamentosService {
         dataAgendamento: (r as any).dataAgendamento,
       });
     }
+    this.preProjetoChatGateway.publicarAtualizacao({
+      id: resultado.id,
+      protocolo: resultado.protocolo,
+    });
     return resultado;
   }
 
@@ -1949,6 +1993,10 @@ export class AgendamentosService {
         dataAgendamento: solDetalhes.dataAgendamento,
       });
     }
+    this.preProjetoChatGateway.publicarAtualizacao({
+      id: resultado.id,
+      protocolo: resultado.protocolo,
+    });
     return resultado;
   }
 

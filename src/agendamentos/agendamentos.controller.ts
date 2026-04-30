@@ -246,7 +246,7 @@ export class AgendamentosController {
     );
   }
 
-  @Permissoes('ARTHUR_SABOYA')
+  @Permissoes('ARTHUR_SABOYA', 'DEV')
   @Post(
     'solicitacoes-pre-projetos/arthur-saboya/portal/:id/confirmar-resposta-enviada',
   )
