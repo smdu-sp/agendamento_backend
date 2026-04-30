@@ -1888,7 +1888,7 @@ export class AgendamentosService {
           autor: AutorMensagemPreProjetoArthurSaboya.SISTEMA,
           corpo: eraReatribuicaoArthurSaboya
             ? 'Técnico da Sala Arthur Saboya atualizado no chamado.'
-            : 'Solicitação encaminhada à coordenadoria. Acompanhe as próximas atualizações por e-mail.',
+            : 'Solicitação recebida, acompanhe as próximas atualizações por e-mail.',
         },
       });
     });

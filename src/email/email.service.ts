@@ -31,8 +31,20 @@ export class EmailService {
   }
 
   private formatarDataHora(d: Date): string {
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}/${d.getUTCFullYear()} às ${pad(d.getUTCHours())}h${pad(d.getUTCMinutes())}`;
+    const partes = new Intl.DateTimeFormat('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(d);
+
+    const get = (type: Intl.DateTimeFormatPartTypes) =>
+      partes.find((p) => p.type === type)?.value ?? '';
+
+    return `${get('day')}/${get('month')}/${get('year')} às ${get('hour')}h${get('minute')}`;
   }
 
   private async enviarComRetry(
