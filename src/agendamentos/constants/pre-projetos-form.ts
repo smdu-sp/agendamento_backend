@@ -2,7 +2,6 @@
 export const PRE_PROJETO_FORMACAO_VALORES = [
   'engenheiro-civil',
   'arquiteto',
-  'tecnologo',
   'outra',
 ] as const;
 
@@ -14,7 +13,6 @@ export const PRE_PROJETO_FORMACAO_LABEL: Record<
 > = {
   'engenheiro-civil': 'Engenheiro Civil',
   arquiteto: 'Arquiteto',
-  tecnologo: 'Tecnólogo',
 };
 
 export const PRE_PROJETO_NATUREZA_VALORES = [
