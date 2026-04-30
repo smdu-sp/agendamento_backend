@@ -335,4 +335,51 @@ export class EmailService {
       `cancelamento:${params.protocolo}`,
     );
   }
+
+  async enviarEncerramentoChamadoPreProjeto(params: {
+    nome: string;
+    email: string;
+    protocolo: string;
+    solicitacaoId: string;
+    encerradoPor: 'MUNICIPE' | 'EQUIPE_ARTHUR';
+    enviarBcc?: boolean;
+  }): Promise<boolean> {
+    const base = this.getFrontendBase();
+    const linkConsulta = `${base}/agendamento/portal/consulta/${params.solicitacaoId}`;
+    const encerramentoPorMunicipe = params.encerradoPor === 'MUNICIPE';
+
+    const html = buildEmailHtml({
+      evento: 'chamado-encerrado',
+      titulo: 'Chamado encerrado',
+      saudacao: `Olá, ${params.nome}.`,
+      paragrafos: encerramentoPorMunicipe
+        ? [
+            `Seu chamado <strong>${params.protocolo}</strong> foi encerrado conforme sua confirmação de resolução.`,
+            'Caso precise de novo atendimento, você pode abrir uma nova solicitação no portal.',
+          ]
+        : [
+            `Seu chamado <strong>${params.protocolo}</strong> foi encerrado pela equipe da Sala Arthur Saboya.`,
+            'Se necessário, você pode abrir uma nova solicitação no portal.',
+          ],
+      botao: { texto: 'Ver histórico do chamado', url: linkConsulta },
+    });
+
+    const textoEncerramento = encerramentoPorMunicipe
+      ? 'encerrado por você'
+      : 'encerrado pela equipe da Sala Arthur Saboya';
+
+    return this.enviarComRetry(
+      {
+        from: this.getRemetente(),
+        to: params.email,
+        subject: `Chamado encerrado — ${params.protocolo}`,
+        html,
+        text:
+          `Olá, ${params.nome}. Seu chamado ${params.protocolo} foi ${textoEncerramento}. ` +
+          `Histórico: ${linkConsulta}`,
+        bcc: (params.enviarBcc ?? true) ? this.getBccEnv() : undefined,
+      },
+      `chamado-encerrado:${params.protocolo}:${params.encerradoPor}`,
+    );
+  }
 }

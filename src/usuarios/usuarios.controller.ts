@@ -108,7 +108,7 @@ export class UsuariosController {
     return this.usuariosService.buscarTecnicosPorDivisao(divisaoId, usuario);
   }
 
-  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
+  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR', 'ARTHUR_SABOYA')
   @Get('buscar-tecnicos-arthur-saboya')
   buscarTecnicosArthurSaboya(
     @UsuarioAtual() usuario?: Usuario,

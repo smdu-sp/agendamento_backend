@@ -5,6 +5,7 @@ export type EventoEmailTipo =
   | 'agendamento-confirmado'
   | 'tecnico-atribuido'
   | 'cancelamento'
+  | 'chamado-encerrado'
   | 'redefinicao-senha';
 
 const CORES_EVENTO: Record<EventoEmailTipo, string> = {
@@ -14,6 +15,7 @@ const CORES_EVENTO: Record<EventoEmailTipo, string> = {
   'agendamento-confirmado': '#EA580C',
   'tecnico-atribuido': '#4F46E5',
   'cancelamento': '#DC2626',
+  'chamado-encerrado': '#0F766E',
   'redefinicao-senha': '#4B5563',
 };
 

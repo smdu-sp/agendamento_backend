@@ -820,6 +820,19 @@ export class AgendamentosService {
         },
       });
     });
+    const solicitacao = await this.prisma.solicitacaoPreProjetoArthurSaboya.findUnique({
+      where: { id },
+      select: { id: true, nome: true, email: true, protocolo: true },
+    });
+    if (solicitacao) {
+      await this.emailService.enviarEncerramentoChamadoPreProjeto({
+        nome: solicitacao.nome,
+        email: solicitacao.email,
+        protocolo: solicitacao.protocolo,
+        solicitacaoId: solicitacao.id,
+        encerradoPor: 'MUNICIPE',
+      });
+    }
 
     const detalhe = await this.obterSolicitacaoDetalheMunicipe(id, municipe);
     this.preProjetoChatGateway.publicarAtualizacao({
@@ -1779,6 +1792,13 @@ export class AgendamentosService {
     const r = await this.prisma.solicitacaoPreProjetoArthurSaboya.findUniqueOrThrow(
       { where: { id: s.id }, select: sel },
     );
+    await this.emailService.enviarEncerramentoChamadoPreProjeto({
+      nome: (r as any).nome,
+      email: (r as any).email,
+      protocolo: (r as any).protocolo,
+      solicitacaoId: s.id,
+      encerradoPor: 'EQUIPE_ARTHUR',
+    });
     const resultado = this.mapSolicitacaoRowToListItem(r);
     this.preProjetoChatGateway.publicarAtualizacao({
       id: resultado.id,
