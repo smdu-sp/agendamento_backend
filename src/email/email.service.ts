@@ -11,11 +11,15 @@ export class EmailService {
   private readonly logger = new Logger(EmailService.name);
 
   private getFrontendBase(): string {
-    return (
-      process.env.FRONTEND_URL ||
-      process.env.NEXT_PUBLIC_FRONTEND_URL ||
-      'http://localhost:3001'
-    ).replace(/\/$/, '');
+    const url = process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_FRONTEND_URL;
+    if (!url) {
+      this.logger.warn(
+        'FRONTEND_URL não configurado — links dos e-mails apontarão para localhost. ' +
+          'Defina FRONTEND_URL no .env de produção.',
+      );
+      return 'http://localhost:3001';
+    }
+    return url.replace(/\/$/, '');
   }
 
   private getRemetente(): string {
