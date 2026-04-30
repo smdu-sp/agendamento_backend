@@ -413,7 +413,7 @@ export class AgendamentosService {
     const texto = String(corpo || '').trim();
     const match = texto.match(AgendamentosService.REGEX_SOLUCIONADO_COM_AUTOR);
     if (!match?.[1]) return corpo;
-    return `Status do chamado alterado para Solucionado em ${match[1]}`;
+    return 'Sua solicitação foi encerrada pela Equipe da Sala Arthur Saboya.';
   }
 
   /**
@@ -783,7 +783,27 @@ export class AgendamentosService {
       return this.obterSolicitacaoDetalheMunicipe(id, municipe);
     }
 
-    const nomeMunicipe = municipe.nome?.trim() || 'Munícipe';
+    const agora = new Date();
+    const dataHoraTexto = new Intl.DateTimeFormat('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(agora);
+    const dataHoraCurta = new Intl.DateTimeFormat('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+      .format(agora)
+      .replace(', ', ' ');
     await this.prisma.$transaction(async (tx) => {
       await tx.solicitacaoPreProjetoArthurSaboya.update({
         where: { id },
@@ -793,7 +813,9 @@ export class AgendamentosService {
         data: {
           solicitacaoId: id,
           autor: AutorMensagemPreProjetoArthurSaboya.SISTEMA,
-          corpo: `Chamado marcado como solucionado por ${nomeMunicipe}.`,
+          corpo:
+            'Status do chamado alterado para Solucionado pelo [b]interessado[/b] ' +
+            `em ${dataHoraTexto.replace(' ', ', às ')} · ${dataHoraCurta}`,
           municipeContaId: municipe.id,
         },
       });
@@ -1717,8 +1739,7 @@ export class AgendamentosService {
         'Só é possível concluir solicitações com status Solicitado ou Agendamento criado.',
       );
     }
-    const nomeResponsavel =
-      usuario.nomeSocial?.trim() || usuario.nome?.trim() || 'Equipe Arthur Saboya';
+    const agora = new Date();
     const dataHoraTexto = new Intl.DateTimeFormat('pt-BR', {
       timeZone: 'America/Sao_Paulo',
       day: '2-digit',
@@ -1727,7 +1748,18 @@ export class AgendamentosService {
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
-    }).format(new Date());
+    }).format(agora);
+    const dataHoraCurta = new Intl.DateTimeFormat('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    })
+      .format(agora)
+      .replace(', ', ' ');
     await this.prisma.$transaction(async (tx) => {
       await tx.solicitacaoPreProjetoArthurSaboya.update({
         where: { id: s.id },
@@ -1738,8 +1770,8 @@ export class AgendamentosService {
           solicitacaoId: s.id,
           autor: AutorMensagemPreProjetoArthurSaboya.SISTEMA,
           corpo:
-            `Status do chamado alterado para Solucionado por ${nomeResponsavel} ` +
-            `em ${dataHoraTexto.replace(' ', ', às ')}`,
+            'Status do chamado alterado para Solucionado pela [b]Sala Arthur Saboya[/b] ' +
+            `em ${dataHoraTexto.replace(' ', ', às ')} · ${dataHoraCurta}`,
         },
       });
     });
@@ -1799,10 +1831,11 @@ export class AgendamentosService {
     const s = await this.assertSolicitacaoPortalArthurSaboya(refUuidOuProtocolo, usuario);
     if (
       s.status !== StatusSolicitacaoPreProjeto.SOLICITADO &&
-      s.status !== StatusSolicitacaoPreProjeto.AGUARDANDO_DATA
+      s.status !== StatusSolicitacaoPreProjeto.AGUARDANDO_DATA &&
+      s.status !== StatusSolicitacaoPreProjeto.AGENDAMENTO_CRIADO
     ) {
       throw new BadRequestException(
-        'Só é possível registrar agendamento a partir de Solicitado ou Aguardando data (não após solucionado).',
+        'Só é possível registrar agendamento a partir de Solicitado, Aguardando data ou Agendamento criado (não após solucionado).',
       );
     }
     const coord = await this.prisma.coordenadoria.findUnique({
@@ -1816,13 +1849,6 @@ export class AgendamentosService {
     if (Number.isNaN(dataHora.getTime())) {
       throw new BadRequestException('Data e hora inválidas.');
     }
-    const divisaoId =
-      s.divisaoId ?? this.divisaoPreProjetosEnv() ?? undefined;
-    if (!divisaoId) {
-      throw new BadRequestException(
-        'Divisão da Sala Arthur Saboya não configurada para esta solicitação.',
-      );
-    }
     const tecnicoArthur = await this.prisma.usuario.findUnique({
       where: { id: dto.tecnicoId },
       select: { id: true, permissao: true, status: true, divisaoId: true },
@@ -1830,16 +1856,20 @@ export class AgendamentosService {
     if (!tecnicoArthur || !tecnicoArthur.status) {
       throw new BadRequestException('Técnico da Sala Arthur Saboya inválido.');
     }
-    if (!this.usuarioPodeSerTecnicoAtribuido(tecnicoArthur)) {
+    if (tecnicoArthur.permissao !== 'ARTHUR_SABOYA') {
       throw new BadRequestException(
-        'Técnico da Sala Arthur Saboya deve ser técnico ou DEV com unidade.',
+        'O técnico informado deve possuir permissão ARTHUR_SABOYA.',
       );
     }
-    if (tecnicoArthur.divisaoId !== divisaoId) {
-      throw new BadRequestException(
-        'O técnico informado não pertence à divisão da Sala Arthur Saboya.',
-      );
-    }
+    const solicitacaoAtual = await this.prisma.solicitacaoPreProjetoArthurSaboya.findUnique({
+      where: { id: s.id },
+      select: { agendamentoId: true, tecnicoArthurId: true, nome: true, email: true, protocolo: true },
+    });
+    const eraReatribuicaoArthurSaboya =
+      s.status === StatusSolicitacaoPreProjeto.AGENDAMENTO_CRIADO &&
+      !!solicitacaoAtual?.tecnicoArthurId &&
+      solicitacaoAtual.tecnicoArthurId !== dto.tecnicoId;
+
     await this.prisma.$transaction(async (tx) => {
       await tx.solicitacaoPreProjetoArthurSaboya.update({
         where: { id: s.id },
@@ -1847,7 +1877,8 @@ export class AgendamentosService {
           status: StatusSolicitacaoPreProjeto.AGENDAMENTO_CRIADO,
           coordenadoriaId: dto.coordenadoriaId,
           dataAgendamento: dataHora,
-          agendamentoId: null,
+          agendamentoId:
+            s.status === StatusSolicitacaoPreProjeto.AGENDAMENTO_CRIADO ? undefined : null,
           tecnicoArthurId: dto.tecnicoId,
         },
       });
@@ -1855,8 +1886,9 @@ export class AgendamentosService {
         data: {
           solicitacaoId: s.id,
           autor: AutorMensagemPreProjetoArthurSaboya.SISTEMA,
-          corpo:
-            'Agendamento efetuado. Verifique as informações no seu e-mail.',
+          corpo: eraReatribuicaoArthurSaboya
+            ? 'Técnico da Sala Arthur Saboya atualizado no chamado.'
+            : 'Solicitação encaminhada à coordenadoria. Acompanhe as próximas atualizações por e-mail.',
         },
       });
     });
@@ -1873,6 +1905,25 @@ export class AgendamentosService {
         solicitacaoId: s.id,
         dataAgendamento: (r as any).dataAgendamento,
       });
+    }
+    if ((r as any).dataAgendamento && tecnicoArthur.id) {
+      const tecnicoArthurCompleto = await this.prisma.usuario.findUnique({
+        where: { id: tecnicoArthur.id },
+        select: { nome: true, login: true, email: true },
+      });
+      const emailTecnicoArthur = tecnicoArthurCompleto?.email?.trim();
+      if (emailTecnicoArthur) {
+        await this.emailService.enviarAtribuicaoTecnicoArthurSaboya({
+          nomeTecnico:
+            tecnicoArthurCompleto?.nome?.trim() ||
+            tecnicoArthurCompleto?.login?.trim() ||
+            'Técnico',
+          emailTecnico: emailTecnicoArthur,
+          protocolo: (r as any).protocolo,
+          nomeMunicipe: (r as any).nome,
+          dataAgendamento: (r as any).dataAgendamento,
+        });
+      }
     }
     this.preProjetoChatGateway.publicarAtualizacao({
       id: resultado.id,

@@ -89,7 +89,11 @@ export class UsuariosService {
       where: {
         status: true,
         coordenadoria: { sigla: 'CAP' },
-        OR: [{ sigla: 'ARTHUR_SABOYA' }, { sigla: 'ATHURSABOYA' }],
+        OR: [
+          { sigla: 'ARTHUR_SABOYA' },
+          { sigla: 'ATHURSABOYA' },
+          { nome: { contains: 'Arthur Saboya' } },
+        ],
       },
       select: { id: true },
     });
@@ -261,8 +265,12 @@ export class UsuariosService {
     divisaoId: string,
     usuarioLogado?: UsuarioLogadoContext,
   ): Promise<{ id: string; nome: string; login: string; email: string }[]> {
+    const permissaoReal = (usuarioLogado as any)?.permissaoReal as string | undefined;
+    const isDevRealOuEfetivo =
+      usuarioLogado?.permissao === 'DEV' || permissaoReal === 'DEV';
     if (
       usuarioLogado &&
+      !isDevRealOuEfetivo &&
       (usuarioLogado.permissao === 'PONTO_FOCAL' ||
         usuarioLogado.permissao === 'COORDENADOR')
     ) {
@@ -292,11 +300,14 @@ export class UsuariosService {
   async buscarTecnicosArthurSaboya(
     usuarioLogado?: UsuarioLogadoContext,
   ): Promise<{ id: string; nome: string; login: string; email: string }[]> {
-    const divisaoArthur = process.env.DIVISAO_ID_PRE_PROJETOS?.trim();
-    if (!divisaoArthur) {
-      return [];
-    }
-    return this.buscarTecnicosPorDivisao(divisaoArthur, usuarioLogado);
+    return this.prisma.usuario.findMany({
+      where: {
+        status: true,
+        permissao: 'ARTHUR_SABOYA',
+      },
+      orderBy: { nome: 'asc' },
+      select: { id: true, nome: true, login: true, email: true },
+    });
   }
 
   async criar(
