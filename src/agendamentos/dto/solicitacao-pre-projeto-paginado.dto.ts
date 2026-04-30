@@ -78,6 +78,11 @@ export class SolicitacaoPreProjetoListItemDto {
   /** Rótulo para exibição: sigla e nome da coordenadoria da solicitação ou da divisão. */
   @ApiPropertyOptional()
   coordenadoriaTexto?: string | null;
+
+  @ApiPropertyOptional({
+    description: 'Indica se o e-mail de notificação foi enviado com sucesso (presente apenas em operações que disparam e-mail).',
+  })
+  emailEnviado?: boolean;
 }
 
 export class SolicitacaoPreProjetoPaginadoDto {

@@ -13,11 +13,12 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { ImpersonationGuard } from './auth/guards/impersonation.guard';
 import { RoleGuard } from './auth/guards/role.guard';
 import { MunicipesAuthModule } from './municipes-auth/municipes-auth.module';
+import { EmailModule } from './email/email.module';
 
 @Global()
 @Module({
   exports: [AppService],
-  imports: [PrismaModule, AuthModule, UsuariosModule, CoordenadoriasModule, DivisoesModule, AgendamentosModule, MotivosModule, TiposAgendamentoModule, MunicipesAuthModule],
+  imports: [PrismaModule, AuthModule, UsuariosModule, CoordenadoriasModule, DivisoesModule, AgendamentosModule, MotivosModule, TiposAgendamentoModule, MunicipesAuthModule, EmailModule],
   providers: [AppService,
     {
       provide: APP_GUARD,
