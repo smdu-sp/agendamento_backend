@@ -357,6 +357,21 @@ export class AgendamentosService {
     return `${pad(data.getUTCDate())}/${pad(data.getUTCMonth() + 1)}/${data.getUTCFullYear()} às ${pad(data.getUTCHours())}:${pad(data.getUTCMinutes())}`;
   }
 
+  /**
+   * Preserva data/hora civil de SP sem deslocamento de fuso.
+   * Ex.: "29/04/2026 18:20" permanece 18:20 ao serializar para ISO.
+   */
+  private instanteCivilSaoPauloSemDeslocamento(
+    ano: number,
+    mesIndex0: number,
+    dia: number,
+    hora: number,
+    minuto: number,
+    segundo: number,
+  ): Date {
+    return new Date(Date.UTC(ano, mesIndex0, dia, hora, minuto, segundo));
+  }
+
   private static readonly REGEX_SOLUCIONADO_COM_AUTOR =
     /^Status do chamado alterado para Solucionado por .+ em (\d{2}\/\d{2}\/\d{4}, às \d{2}:\d{2})$/;
 
@@ -3105,7 +3120,7 @@ export class AgendamentosService {
           if (matchBR) {
             const [, dia, mes, ano, hora, minuto, segundo] = matchBR;
             // Data/hora civil em Brasília → instante UTC correto no banco
-            dataHoraObj = instanteCivilSaoPaulo(
+            dataHoraObj = this.instanteCivilSaoPauloSemDeslocamento(
               parseInt(ano, 10),
               parseInt(mes, 10) - 1,
               parseInt(dia, 10),
@@ -3129,7 +3144,7 @@ export class AgendamentosService {
                 const hora = parsedDate.getHours();
                 const minuto = parsedDate.getMinutes();
                 const segundo = parsedDate.getSeconds();
-                dataHoraObj = instanteCivilSaoPaulo(
+                dataHoraObj = this.instanteCivilSaoPauloSemDeslocamento(
                   ano,
                   mes,
                   dia,
@@ -3157,7 +3172,7 @@ export class AgendamentosService {
           const h = Math.floor(totalSegundos / 3600);
           const m = Math.floor((totalSegundos % 3600) / 60);
           const s = totalSegundos % 60;
-          dataHoraObj = instanteCivilSaoPaulo(
+          dataHoraObj = this.instanteCivilSaoPauloSemDeslocamento(
             dataBase.getUTCFullYear(),
             dataBase.getUTCMonth(),
             dataBase.getUTCDate(),
@@ -3657,7 +3672,7 @@ export class AgendamentosService {
         mes = hoje.getMonth();
         dia = hoje.getDate();
       }
-      const d = instanteCivilSaoPaulo(ano, mes, dia, h, min, 0);
+      const d = this.instanteCivilSaoPauloSemDeslocamento(ano, mes, dia, h, min, 0);
       return Number.isNaN(d.getTime()) ? null : d;
     }
 
@@ -3668,7 +3683,7 @@ export class AgendamentosService {
     const br = /^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})/.exec(s);
     if (br) {
       const [, dia, mes, ano, h, min] = br;
-      const d2 = instanteCivilSaoPaulo(
+      const d2 = this.instanteCivilSaoPauloSemDeslocamento(
         Number(ano),
         Number(mes) - 1,
         Number(dia),
@@ -3701,7 +3716,7 @@ export class AgendamentosService {
         dia = hoje.getDate();
       }
       const seg = Number(soHorario[3] ?? 0);
-      const d3 = instanteCivilSaoPaulo(
+      const d3 = this.instanteCivilSaoPauloSemDeslocamento(
         ano,
         mes,
         dia,
