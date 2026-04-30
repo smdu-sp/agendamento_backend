@@ -358,6 +358,38 @@ export class AgendamentosService {
   }
 
   /**
+   * Converte um instante para data/hora civil de São Paulo no payload de resposta.
+   * Isso evita exibir +3h quando o consumidor renderiza ISO sem aplicar timezone.
+   */
+  private ajustarDataParaExibicaoSaoPaulo(data?: Date | null): Date | null {
+    if (!data) return null;
+    const parts = new Intl.DateTimeFormat('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).formatToParts(data);
+    const ano = Number(parts.find((p) => p.type === 'year')?.value ?? 0);
+    const mes = Number(parts.find((p) => p.type === 'month')?.value ?? 1) - 1;
+    const dia = Number(parts.find((p) => p.type === 'day')?.value ?? 1);
+    const hora = Number(parts.find((p) => p.type === 'hour')?.value ?? 0);
+    const minuto = Number(parts.find((p) => p.type === 'minute')?.value ?? 0);
+    const segundo = Number(parts.find((p) => p.type === 'second')?.value ?? 0);
+    return this.instanteCivilSaoPauloSemDeslocamento(
+      ano,
+      mes,
+      dia,
+      hora,
+      minuto,
+      segundo,
+    );
+  }
+
+  /**
    * Preserva data/hora civil de SP sem deslocamento de fuso.
    * Ex.: "29/04/2026 18:20" permanece 18:20 ao serializar para ISO.
    */
@@ -1070,7 +1102,7 @@ export class AgendamentosService {
             m.autor === AutorMensagemPreProjetoArthurSaboya.SISTEMA
               ? corpoSistema
               : m.corpo,
-          criadoEm: m.criadoEm,
+          criadoEm: this.ajustarDataParaExibicaoSaoPaulo(m.criadoEm) ?? m.criadoEm,
           nomeRemetente:
             m.autor === AutorMensagemPreProjetoArthurSaboya.SISTEMA
               ? 'Sistema'
@@ -1407,6 +1439,12 @@ export class AgendamentosService {
       null;
     return {
       ...rest,
+      criadoEm: this.ajustarDataParaExibicaoSaoPaulo(rest.criadoEm) ?? rest.criadoEm,
+      avaliacaoEm:
+        this.ajustarDataParaExibicaoSaoPaulo(rest.avaliacaoEm) ?? rest.avaliacaoEm,
+      dataAgendamento:
+        this.ajustarDataParaExibicaoSaoPaulo(rest.dataAgendamento) ??
+        rest.dataAgendamento,
       coordenadoriaId:
         rest.coordenadoriaId ??
         coordenadoria?.id ??
