@@ -11,8 +11,7 @@ export class EmailService {
   private readonly logger = new Logger(EmailService.name);
 
   private getFrontendBase(): string {
-    const url = process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_FRONTEND_URL || 'https://smulweb.prefeitura.sp.gov.br/agendamento';
-    return url.replace(/\/$/, '');
+    return 'https://smulweb.prefeitura.sp.gov.br';
   }
 
   private getRemetente(): string {
