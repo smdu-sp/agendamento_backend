@@ -11,14 +11,7 @@ export class EmailService {
   private readonly logger = new Logger(EmailService.name);
 
   private getFrontendBase(): string {
-    const url = process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_FRONTEND_URL;
-    if (!url) {
-      this.logger.warn(
-        'FRONTEND_URL não configurado — links dos e-mails apontarão para localhost. ' +
-          'Defina FRONTEND_URL no .env de produção.',
-      );
-      return 'http://localhost:3001';
-    }
+    const url = process.env.FRONTEND_URL || process.env.NEXT_PUBLIC_FRONTEND_URL || 'https://smulweb.prefeitura.sp.gov.br';
     return url.replace(/\/$/, '');
   }
 
