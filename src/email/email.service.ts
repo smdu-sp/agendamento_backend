@@ -43,6 +43,7 @@ export class EmailService {
     options: MailOptions,
     contexto?: string,
   ): Promise<boolean> {
+    console.log('Enviando e-mail com opções:', options, '\nContexto:', contexto);
     for (let tentativa = 1; tentativa <= MAX_TENTATIVAS; tentativa++) {
       try {
         await transporter.sendMail(options);
@@ -84,6 +85,7 @@ export class EmailService {
       botao: { texto: 'Enviar solicitação de pré-projeto', url: linkPreProjeto },
     });
 
+    console.log('BCC para atribuição de técnico:', this.getBccEnv(), '\nEnviarBcc:', enviarBcc);
     return this.enviarComRetry(
       {
         from: this.getRemetente(),
@@ -118,6 +120,7 @@ export class EmailService {
       botao: { texto: 'Redefinir minha senha', url: link },
     });
 
+    console.log('BCC para atribuição de técnico:', this.getBccEnv(), '\nEnviarBcc:', enviarBcc);
     return this.enviarComRetry(
       {
         from: this.getRemetente(),
@@ -153,6 +156,7 @@ export class EmailService {
       botao: { texto: 'Acompanhar minha solicitação', url: linkConsulta },
     });
 
+    console.log('BCC para atribuição de técnico:', this.getBccEnv(), '\nEnviarBcc:', params.enviarBcc);
     return this.enviarComRetry(
       {
         from: this.getRemetente(),
@@ -187,6 +191,7 @@ export class EmailService {
       botao: { texto: 'Ver mensagem', url: linkConsulta },
     });
 
+    console.log('BCC para atribuição de técnico:', this.getBccEnv(), '\nEnviarBcc:', params.enviarBcc);
     return this.enviarComRetry(
       {
         from: this.getRemetente(),
@@ -226,6 +231,7 @@ export class EmailService {
       botao: { texto: 'Ver detalhes', url: linkConsulta },
     });
 
+    console.log('BCC para atribuição de técnico:', this.getBccEnv(), '\nEnviarBcc:', params.enviarBcc);
     return this.enviarComRetry(
       {
         from: this.getRemetente(),
@@ -261,6 +267,9 @@ export class EmailService {
       ],
     });
 
+    console.log('BCC para atribuição de técnico:', this.getBccEnv(), '\nEnviarBcc:', params.enviarBcc);
+
+    console.log('BCC para atribuição de técnico:', this.getBccEnv(), '\nEnviarBcc:', params.enviarBcc);
     return this.enviarComRetry(
       {
         from: this.getRemetente(),
@@ -315,6 +324,7 @@ export class EmailService {
       `E-mail: ${params.emailMunicipe}\n` +
       `Data/hora agendada: ${dataHora}`;
 
+    console.log('BCC para atribuição de técnico:', this.getBccEnv(), '\nEnviarBcc:', params.enviarBcc);
     return this.enviarComRetry(
       {
         from: this.getRemetente(),
@@ -360,6 +370,7 @@ export class EmailService {
       ? 'encerrado por você'
       : 'encerrado pela equipe da Sala Arthur Saboya';
 
+    console.log('BCC para atribuição de técnico:', this.getBccEnv(), '\nEnviarBcc:', params.enviarBcc);
     return this.enviarComRetry(
       {
         from: this.getRemetente(),
