@@ -1924,6 +1924,19 @@ export class AgendamentosService {
           tecnicoArthurId: dto.tecnicoId,
         },
       });
+      if (
+        s.status === StatusSolicitacaoPreProjeto.AGENDAMENTO_CRIADO &&
+        solicitacaoAtual?.agendamentoId
+      ) {
+        await tx.agendamento.update({
+          where: { id: solicitacaoAtual.agendamentoId },
+          data: {
+            dataHora,
+            dataFim: this.calcularDataFim(dataHora, 60),
+            coordenadoriaId: dto.coordenadoriaId,
+          },
+        });
+      }
       await tx.solicitacaoPreProjetoArthurSaboyaMensagem.create({
         data: {
           solicitacaoId: s.id,
