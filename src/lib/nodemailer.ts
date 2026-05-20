@@ -1,5 +1,12 @@
 const mailApiUrl = (process.env.MAIL_API_URL || 'http://localhost:3501').replace(/\/$/, '');
 
+export interface MailAttachment {
+  filename: string;
+  content: string;
+  contentType?: string;
+  encoding?: string;
+}
+
 export const transporter = {
   async sendMail(options: {
     from: string;
@@ -8,6 +15,8 @@ export const transporter = {
     text?: string;
     html?: string;
     bcc?: string | string[];
+    cc?: string | string[];
+    attachments?: MailAttachment[];
   }) {
     const response = await fetch(`${mailApiUrl}/send-email`, {
       method: 'POST',

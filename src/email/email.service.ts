@@ -2,6 +2,46 @@ import { Injectable, Logger } from '@nestjs/common';
 import { transporter } from 'src/lib/nodemailer';
 import { buildEmailHtml } from './email-templates';
 
+const SABOYA_ATENDIMENTO_EMAIL = 'saboya_atendimento@prefeitura.sp.gov.br';
+
+function gerarIcsArthurSaboya(params: {
+  uid: string;
+  dtStart: Date;
+  dtEnd: Date;
+  summary: string;
+  description: string;
+  organizerEmail: string;
+  attendees: string[];
+}): string {
+  const fmt = (d: Date) =>
+    d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const escape = (s: string) => s.replace(/\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;');
+  const attendeeLines = params.attendees
+    .map(
+      (email) =>
+        `ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=${email}:MAILTO:${email}`,
+    )
+    .join('\r\n');
+  return [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//SMUL//Agendamentos Arthur Saboya//PT',
+    'CALSCALE:GREGORIAN',
+    'METHOD:REQUEST',
+    'BEGIN:VEVENT',
+    `UID:${params.uid}`,
+    `DTSTAMP:${fmt(new Date())}`,
+    `DTSTART:${fmt(params.dtStart)}`,
+    `DTEND:${fmt(params.dtEnd)}`,
+    `SUMMARY:${escape(params.summary)}`,
+    `DESCRIPTION:${escape(params.description)}`,
+    `ORGANIZER;CN=Sala Arthur Saboya:MAILTO:${params.organizerEmail}`,
+    attendeeLines,
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].join('\r\n');
+}
+
 const MAX_TENTATIVAS = 5;
 
 type MailOptions = Parameters<typeof transporter.sendMail>[0];
@@ -250,6 +290,8 @@ export class EmailService {
     emailTecnico: string;
     protocolo: string;
     nomeMunicipe: string;
+    emailMunicipe?: string;
+    emailTecnicoCoordenadoria?: string;
     dataAgendamento: Date;
     enviarBcc?: boolean;
   }): Promise<boolean> {
@@ -267,17 +309,41 @@ export class EmailService {
       ],
     });
 
-    console.log('BCC para atribuição de técnico:', this.getBccEnv(), '\nEnviarBcc:', params.enviarBcc);
+    const dtEnd = new Date(params.dataAgendamento.getTime() + 60 * 60 * 1000);
+    const attendees = [
+      params.emailTecnico,
+      SABOYA_ATENDIMENTO_EMAIL,
+      ...(params.emailMunicipe ? [params.emailMunicipe] : []),
+      ...(params.emailTecnicoCoordenadoria ? [params.emailTecnicoCoordenadoria] : []),
+    ];
+    const icsContent = gerarIcsArthurSaboya({
+      uid: `${params.protocolo}@smul.prefeitura.sp.gov.br`,
+      dtStart: params.dataAgendamento,
+      dtEnd,
+      summary: `Atendimento Pré-Projeto — ${params.protocolo}`,
+      description: `Atendimento técnico da Sala Arthur Saboya referente ao protocolo ${params.protocolo}.\nMunícipe: ${params.nomeMunicipe}`,
+      organizerEmail: this.getRemetente(),
+      attendees,
+    });
 
     console.log('BCC para atribuição de técnico:', this.getBccEnv(), '\nEnviarBcc:', params.enviarBcc);
     return this.enviarComRetry(
       {
         from: this.getRemetente(),
         to: params.emailTecnico,
+        cc: SABOYA_ATENDIMENTO_EMAIL,
         subject: `Atendimento atribuído — ${params.protocolo}`,
         html,
         text: `Olá, ${params.nomeTecnico}. Você foi designado técnico do atendimento ${params.protocolo} (${params.nomeMunicipe}) em ${dataFormatada}.`,
         bcc: (params.enviarBcc ?? true) ? this.getBccEnv() : undefined,
+        attachments: [
+          {
+            filename: `agendamento-${params.protocolo}.ics`,
+            content: icsContent,
+            contentType: 'text/calendar; method=REQUEST',
+            encoding: 'utf-8',
+          },
+        ],
       },
       `tecnico-atribuido:${params.protocolo}`,
     );

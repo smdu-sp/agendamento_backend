@@ -7,7 +7,14 @@
       "Bash(cp /tmp/agendamento/README.md \"/c/Users/d854440/Sistemas/Agendamentos/agendamento_frontend/design-prototype/\")",
       "Bash(npx tsc *)",
       "Bash(xargs grep *)",
-      "Bash(Select-String -Pattern \"banner|Banner\")"
+      "Bash(Select-String -Pattern \"banner|Banner\")",
+      "Bash(find \"c:/Users/d854440/Sistemas\" -name \"*.json\" -path \"*mail*\" 2>/dev/null | head -10)",
+      "Read(//c/Users/d854440/Sistemas/**)",
+      "Bash(find \"c:/Users/d854440\" -name \"*.js\" -path \"*mail*\" -not -path \"*/node_modules/*\" -not -path \"*/.next/*\" 2>/dev/null | head -10)",
+      "Read(//c/Users/d854440/**)",
+      "Bash(find \"c:/Users/d854440\" -name \"server.js\" -o -name \"app.js\" -o -name \"index.js\" 2>/dev/null | grep -v \"node_modules\\\\|.next\" | head -20)",
+      "Bash(Get-Content \"c:/Users/d854440/Sistemas/Agendamentos/agendamento_backend/.claude/settings.local.json\")",
+      "Bash(Get-Content \"c:/Users/d854440/Sistemas/Agendamentos/agendamento_backend/.env.local\")"
     ]
   }
 }

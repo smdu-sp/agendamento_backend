@@ -1458,6 +1458,13 @@ export class AgendamentosService {
           email: true,
         },
       },
+      agendamento: {
+        select: {
+          tecnico: {
+            select: { email: true },
+          },
+        },
+      },
       divisao: {
         select: {
           coordenadoria: {
@@ -1509,15 +1516,18 @@ export class AgendamentosService {
         nome?: string | null;
         email?: string | null;
       } | null;
-      agendamento?: unknown;
+      agendamento?: {
+        tecnico?: { email?: string | null } | null;
+      } | null;
     } & Omit<
       SolicitacaoPreProjetoListItemDto,
       | 'emailContatoDivisao'
       | 'coordenadoriaTexto'
       | 'tecnicoArthurNome'
       | 'tecnicoArthurEmail'
+      | 'emailTecnicoCoordenadoria'
     >;
-    const { divisao, coordenadoria, tecnicoArthur, agendamento: _ag, ...rest } =
+    const { divisao, coordenadoria, tecnicoArthur, agendamento, ...rest } =
       row;
     const coordenadoriaTexto =
       AgendamentosService.formatCoordenadoriaLabel(coordenadoria) ??
@@ -1542,6 +1552,7 @@ export class AgendamentosService {
         null,
       tecnicoArthurNome: tecnicoArthur?.nome?.trim() || null,
       tecnicoArthurEmail: tecnicoArthur?.email?.trim() || null,
+      emailTecnicoCoordenadoria: agendamento?.tecnico?.email?.trim() || null,
       coordenadoriaTexto,
     };
   }
@@ -1952,6 +1963,7 @@ export class AgendamentosService {
           emailTecnico: emailTecnicoArthur,
           protocolo: (r as any).protocolo,
           nomeMunicipe: (r as any).nome,
+          emailMunicipe: (r as any).email,
           dataAgendamento: (r as any).dataAgendamento,
         });
       }
@@ -2079,8 +2091,18 @@ export class AgendamentosService {
         emailTecnico,
         protocolo: s.protocolo,
         nomeMunicipe: solDetalhes.nome,
+        emailMunicipe: solDetalhes.email ?? undefined,
         dataAgendamento: solDetalhes.dataAgendamento,
       });
+      if (solDetalhes.email && solDetalhes.nome) {
+        await this.emailService.enviarAgendamentoConfirmadoMunicipe({
+          nome: solDetalhes.nome,
+          email: solDetalhes.email,
+          protocolo: s.protocolo,
+          solicitacaoId: s.id,
+          dataAgendamento: solDetalhes.dataAgendamento,
+        });
+      }
     }
     this.preProjetoChatGateway.publicarAtualizacao({
       id: resultado.id,
