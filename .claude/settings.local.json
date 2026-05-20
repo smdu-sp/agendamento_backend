@@ -6,7 +6,8 @@
       "Bash(cp /tmp/agendamento/chats/chat1.md \"/c/Users/d854440/Sistemas/Agendamentos/agendamento_frontend/design-prototype/chats/\")",
       "Bash(cp /tmp/agendamento/README.md \"/c/Users/d854440/Sistemas/Agendamentos/agendamento_frontend/design-prototype/\")",
       "Bash(npx tsc *)",
-      "Bash(xargs grep *)"
+      "Bash(xargs grep *)",
+      "Bash(Select-String -Pattern \"banner|Banner\")"
     ]
   }
 }
