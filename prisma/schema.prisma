@@ -219,7 +219,7 @@ enum StatusAgendamento {
 
 enum StatusSolicitacaoPreProjeto {
   SOLICITADO
-  RESPONDIDO
+  RESPONDIDO //SOLUCIONADO
   AGUARDANDO_DATA
   AGENDAMENTO_CRIADO
 }

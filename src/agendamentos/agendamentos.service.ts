@@ -1466,6 +1466,13 @@ export class AgendamentosService {
         },
       },
       coordenadoria: { select: { id: true, email: true, sigla: true, nome: true } },
+      mensagens: {
+        select: {
+          id: true,
+          autor: true
+        },
+        orderBy: { criadoEm: 'desc' },
+      }
     };
   }
 
