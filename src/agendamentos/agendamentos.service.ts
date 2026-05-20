@@ -1897,11 +1897,15 @@ export class AgendamentosService {
       !!solicitacaoAtual?.tecnicoArthurId &&
       solicitacaoAtual.tecnicoArthurId !== dto.tecnicoId;
 
+    const novoStatus = s.status === StatusSolicitacaoPreProjeto.AGENDAMENTO_CRIADO
+      ? StatusSolicitacaoPreProjeto.AGENDAMENTO_CRIADO
+      : StatusSolicitacaoPreProjeto.AGUARDANDO_DATA;
+
     await this.prisma.$transaction(async (tx) => {
       await tx.solicitacaoPreProjetoArthurSaboya.update({
         where: { id: s.id },
         data: {
-          status: StatusSolicitacaoPreProjeto.AGENDAMENTO_CRIADO,
+          status: novoStatus,
           coordenadoriaId: dto.coordenadoriaId,
           dataAgendamento: dataHora,
           agendamentoId:
@@ -1915,7 +1919,7 @@ export class AgendamentosService {
           autor: AutorMensagemPreProjetoArthurSaboya.SISTEMA,
           corpo: eraReatribuicaoArthurSaboya
             ? 'Técnico da Sala Arthur Saboya atualizado no chamado.'
-            : 'Solicitação recebida, acompanhe as próximas atualizações por e-mail.',
+            : 'Solicitação encaminhada à coordenadoria, aguardando confirmação de data/hora.',
         },
       });
     });
@@ -1924,7 +1928,7 @@ export class AgendamentosService {
       { where: { id: s.id }, select: sel },
     );
     const resultado = this.mapSolicitacaoRowToListItem(r);
-    if ((r as any).dataAgendamento) {
+    if (novoStatus === StatusSolicitacaoPreProjeto.AGENDAMENTO_CRIADO && (r as any).dataAgendamento) {
       resultado.emailEnviado = await this.emailService.enviarAgendamentoConfirmadoMunicipe({
         nome: (r as any).nome,
         email: (r as any).email,
@@ -1933,7 +1937,7 @@ export class AgendamentosService {
         dataAgendamento: (r as any).dataAgendamento,
       });
     }
-    if ((r as any).dataAgendamento && tecnicoArthur.id) {
+    if (novoStatus === StatusSolicitacaoPreProjeto.AGENDAMENTO_CRIADO && (r as any).dataAgendamento && tecnicoArthur.id) {
       const tecnicoArthurCompleto = await this.prisma.usuario.findUnique({
         where: { id: tecnicoArthur.id },
         select: { nome: true, login: true, email: true },
@@ -1965,7 +1969,10 @@ export class AgendamentosService {
     usuario: Usuario,
   ): Promise<SolicitacaoPreProjetoListItemDto> {
     const s = await this.assertSolicitacaoPortalArthurSaboya(refUuidOuProtocolo, usuario);
-    if (s.status !== StatusSolicitacaoPreProjeto.AGENDAMENTO_CRIADO) {
+    if (
+      s.status !== StatusSolicitacaoPreProjeto.AGENDAMENTO_CRIADO &&
+      s.status !== StatusSolicitacaoPreProjeto.AGUARDANDO_DATA
+    ) {
       throw new BadRequestException(
         'Só é possível atribuir técnico da coordenadoria quando o chamado já foi encaminhado.',
       );
@@ -2046,11 +2053,15 @@ export class AgendamentosService {
           data: { agendamentoId: novoAgendamento.id },
         });
       }
+      await tx.solicitacaoPreProjetoArthurSaboya.update({
+        where: { id: s.id },
+        data: { status: StatusSolicitacaoPreProjeto.AGENDAMENTO_CRIADO },
+      });
       await tx.solicitacaoPreProjetoArthurSaboyaMensagem.create({
         data: {
           solicitacaoId: s.id,
           autor: AutorMensagemPreProjetoArthurSaboya.SISTEMA,
-          corpo: `Técnico da coordenadoria atribuído: ${nomeTecnico}.`,
+          corpo: `Técnico da coordenadoria atribuído: ${nomeTecnico}. Agendamento confirmado.`,
           usuarioId: usuario.id,
         },
       });
@@ -2828,6 +2839,10 @@ export class AgendamentosService {
       });
       if (sol) {
         const dataRef = agendamentoAtualizado.dataHora;
+        await this.prisma.solicitacaoPreProjetoArthurSaboya.update({
+          where: { id: sol.id },
+          data: { status: StatusSolicitacaoPreProjeto.AGENDAMENTO_CRIADO },
+        });
         await this.prisma.solicitacaoPreProjetoArthurSaboyaMensagem.create({
           data: {
             solicitacaoId: sol.id,

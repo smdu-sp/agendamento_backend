@@ -288,7 +288,7 @@ export class AgendamentosController {
   )
   @ApiOperation({
     summary:
-      'Portal Arthur Saboya — envia para a coordenadoria com data/hora e técnico da Sala Arthur (status da solicitação → Agendamento criado).',
+      'Portal Arthur Saboya — envia para a coordenadoria com data/hora proposta e técnico da Sala Arthur (status → Aguardando data). Re-atribuição quando já estava em Agendamento criado mantém o status.',
   })
   portalArthurSaboyaCriarAgendamentoDaSolicitacao(
     @Param('id') id: string,
