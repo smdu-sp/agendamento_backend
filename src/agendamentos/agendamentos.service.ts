@@ -2070,7 +2070,7 @@ export class AgendamentosService {
             divisaoId: tecnicoCoord.divisaoId,
             tecnicoId,
             tipoAgendamentoId: tipoId ?? undefined,
-            status: StatusAgendamento.AGENDADO,
+            status: StatusAgendamento.SOLICITADO,
           },
         });
         await tx.solicitacaoPreProjetoArthurSaboya.update({
