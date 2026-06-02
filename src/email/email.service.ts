@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { transporter } from 'src/lib/nodemailer';
 import { buildEmailHtml } from './email-templates';
 
+import { PRE_PROJETO_DURACAO_ATENDIMENTO_MINUTOS } from 'src/agendamentos/constants/pre-projetos-form';
+
 const SABOYA_ATENDIMENTO_EMAIL = 'saboya_atendimento@prefeitura.sp.gov.br';
 
 function gerarIcsArthurSaboya(params: {
@@ -305,23 +307,30 @@ export class EmailService {
       lista: [
         { label: 'Protocolo', valor: params.protocolo },
         { label: 'Munícipe', valor: params.nomeMunicipe },
-        { label: 'Data e hora', valor: dataFormatada },
+        { label: 'Data e hora (horário de Brasília)', valor: dataFormatada },
       ],
     });
 
-    const dtEnd = new Date(params.dataAgendamento.getTime() + 60 * 60 * 1000);
+    const dtEnd = new Date(
+      params.dataAgendamento.getTime() +
+        PRE_PROJETO_DURACAO_ATENDIMENTO_MINUTOS * 60 * 1000,
+    );
     const attendees = [
       params.emailTecnico,
       SABOYA_ATENDIMENTO_EMAIL,
       ...(params.emailMunicipe ? [params.emailMunicipe] : []),
       ...(params.emailTecnicoCoordenadoria ? [params.emailTecnicoCoordenadoria] : []),
     ];
+    const descricaoIcs =
+      `Atendimento técnico da Sala Arthur Saboya referente ao protocolo ${params.protocolo}.\n` +
+      `Munícipe: ${params.nomeMunicipe}\n` +
+      `Data e hora do atendimento (horário de Brasília): ${dataFormatada}`;
     const icsContent = gerarIcsArthurSaboya({
       uid: `${params.protocolo}@smul.prefeitura.sp.gov.br`,
       dtStart: params.dataAgendamento,
       dtEnd,
       summary: `Atendimento Pré-Projeto — ${params.protocolo}`,
-      description: `Atendimento técnico da Sala Arthur Saboya referente ao protocolo ${params.protocolo}.\nMunícipe: ${params.nomeMunicipe}`,
+      description: descricaoIcs,
       organizerEmail: this.getRemetente(),
       attendees,
     });

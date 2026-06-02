@@ -24,6 +24,7 @@ import { CriarAgendamentoSolicitacaoPreProjetoPortalDto } from './dto/criar-agen
 import {
   PRE_PROJETO_FORMACAO_LABEL,
   PRE_PROJETO_NATUREZA_LABEL,
+  PRE_PROJETO_DURACAO_ATENDIMENTO_MINUTOS,
   PRE_PROJETO_TIPO_AGENDAMENTO_TEXTO,
 } from './constants/pre-projetos-form';
 import { PrismaService } from 'src/prisma/prisma.service';
@@ -1932,7 +1933,10 @@ export class AgendamentosService {
           where: { id: solicitacaoAtual.agendamentoId },
           data: {
             dataHora,
-            dataFim: this.calcularDataFim(dataHora, 60),
+            dataFim: this.calcularDataFim(
+              dataHora,
+              PRE_PROJETO_DURACAO_ATENDIMENTO_MINUTOS,
+            ),
             coordenadoriaId: dto.coordenadoriaId,
           },
         });
@@ -2065,7 +2069,10 @@ export class AgendamentosService {
             email: solDetalhes.email,
             processo: s.protocolo,
             dataHora: solDetalhes.dataAgendamento,
-            dataFim: this.calcularDataFim(solDetalhes.dataAgendamento, 60),
+            dataFim: this.calcularDataFim(
+              solDetalhes.dataAgendamento,
+              PRE_PROJETO_DURACAO_ATENDIMENTO_MINUTOS,
+            ),
             coordenadoriaId: s.coordenadoriaId,
             divisaoId: tecnicoCoord.divisaoId,
             tecnicoId,
@@ -2804,9 +2811,14 @@ export class AgendamentosService {
       const dataHora = new Date(updateAgendamentoDto.dataHora);
       dataAtualizacao.dataHora = dataHora;
 
-      // Se não forneceu dataFim, recalcula baseado na nova dataHora (60 min)
+      // Se não forneceu dataFim, recalcula com a duração do tipo de agendamento
       if (!updateAgendamentoDto.dataFim) {
-        dataAtualizacao.dataFim = this.calcularDataFim(dataHora, 60);
+        const duracaoMin =
+          agendamentoAtual.tipoAgendamento?.texto?.trim() ===
+          PRE_PROJETO_TIPO_AGENDAMENTO_TEXTO
+            ? PRE_PROJETO_DURACAO_ATENDIMENTO_MINUTOS
+            : 60;
+        dataAtualizacao.dataFim = this.calcularDataFim(dataHora, duracaoMin);
       }
     }
 
