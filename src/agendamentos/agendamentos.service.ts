@@ -27,6 +27,13 @@ import {
   PRE_PROJETO_DURACAO_ATENDIMENTO_MINUTOS,
   PRE_PROJETO_TIPO_AGENDAMENTO_TEXTO,
 } from './constants/pre-projetos-form';
+import {
+  isAdmArthurSaboya,
+  isTecnicoArthurSaboya,
+  podeConcluirChamadoArthurSaboya,
+  podeSerTecnicoAtendimentoArthurSaboya,
+  statusPermiteConclusaoChamadoArthurSaboya,
+} from './constants/arthur-saboya-perfis';
 import { PrismaService } from 'src/prisma/prisma.service';
 import {
   Agendamento,
@@ -1077,10 +1084,11 @@ export class AgendamentosService {
     const podeComoStaffInterno =
       usuario.permissao === 'DEV' ||
       usuario.permissao === 'ADM' ||
+      isAdmArthurSaboya(usuario.permissao) ||
       permReal === 'DEV' ||
       permReal === 'ADM';
     const podeComoTecnicoSala =
-      (usuario.permissao === 'TEC' || usuario.permissao === 'ARTHUR_SABOYA') &&
+      (usuario.permissao === 'TEC' || isTecnicoArthurSaboya(usuario.permissao)) &&
       !!divUser &&
       divUser === divSala;
     if (!podeComoStaffInterno && !podeComoTecnicoSala) {
@@ -1319,7 +1327,7 @@ export class AgendamentosService {
       !!divUser &&
       divUser === divSala;
 
-    if (isDevRealOuEfetivo || isAdmSalaArthur) {
+    if (isDevRealOuEfetivo || isAdmSalaArthur || isAdmArthurSaboya(perm)) {
       return this.listarSolicitacoesPreProjetoComWhere(
         pagina,
         limite,
@@ -1680,7 +1688,7 @@ export class AgendamentosService {
       !!divSala &&
       !!divUser &&
       divUser === divSala;
-    if (isDevRealOuEfetivo || isAdmSalaArthur || isAdmRealOuEfetivo) {
+    if (isDevRealOuEfetivo || isAdmSalaArthur || isAdmArthurSaboya(perm) || isAdmRealOuEfetivo) {
       return row;
     }
 
@@ -1713,13 +1721,17 @@ export class AgendamentosService {
       return row;
     }
 
-    if (perm === 'ARTHUR_SABOYA') {
+    if (perm === 'ARTHUR_SABOYA' || isAdmArthurSaboya(perm)) {
       if (divSala && divUser && divUser === divSala) {
-        if (row.divisaoId !== divSala) {
+        const divisaoSolicitacao = row.divisaoId ?? divSala;
+        if (divisaoSolicitacao !== divSala) {
           throw new ForbiddenException(
             'Esta solicitação não pertence à divisão da Sala Arthur Saboya.',
           );
         }
+        return row;
+      }
+      if (isAdmArthurSaboya(perm)) {
         return row;
       }
       const coordId = await this.coordenadoriaIdDoUsuarioLogado(usuario);
@@ -1757,16 +1769,13 @@ export class AgendamentosService {
     refUuidOuProtocolo: string,
     usuario: Usuario,
   ): Promise<SolicitacaoPreProjetoListItemDto> {
-    if (usuario.permissao !== 'ARTHUR_SABOYA' && usuario.permissao !== 'DEV') {
+    if (!podeConcluirChamadoArthurSaboya(usuario.permissao)) {
       throw new ForbiddenException(
-        'Apenas os perfis Arthur_saboya e DEV podem marcar chamado como solucionado.',
+        'Apenas os perfis Técnico Arthur Saboya, Administrador Arthur Saboya e DEV podem marcar chamado como solucionado.',
       );
     }
     const s = await this.assertSolicitacaoPortalArthurSaboya(refUuidOuProtocolo, usuario);
-    if (
-      s.status !== StatusSolicitacaoPreProjeto.SOLICITADO &&
-      s.status !== StatusSolicitacaoPreProjeto.AGENDAMENTO_CRIADO
-    ) {
+    if (!statusPermiteConclusaoChamadoArthurSaboya(s.status)) {
       throw new BadRequestException(
         'Só é possível concluir solicitações com status Solicitado ou Agendamento criado.',
       );
@@ -1797,6 +1806,12 @@ export class AgendamentosService {
         where: { id: s.id },
         data: { status: StatusSolicitacaoPreProjeto.RESPONDIDO },
       });
+      if (s.agendamentoId) {
+        await tx.agendamento.update({
+          where: { id: s.agendamentoId },
+          data: { status: StatusAgendamento.ATENDIDO },
+        });
+      }
       await tx.solicitacaoPreProjetoArthurSaboyaMensagem.create({
         data: {
           solicitacaoId: s.id,
@@ -1895,9 +1910,9 @@ export class AgendamentosService {
     if (!tecnicoArthur || !tecnicoArthur.status) {
       throw new BadRequestException('Técnico da Sala Arthur Saboya inválido.');
     }
-    if (tecnicoArthur.permissao !== 'ARTHUR_SABOYA') {
+    if (!podeSerTecnicoAtendimentoArthurSaboya(tecnicoArthur.permissao)) {
       throw new BadRequestException(
-        'O técnico informado deve possuir permissão ARTHUR_SABOYA.',
+        'O técnico informado deve possuir permissão de Técnico ou Administrador Arthur Saboya.',
       );
     }
     const solicitacaoAtual = await this.prisma.solicitacaoPreProjetoArthurSaboya.findUnique({

@@ -179,7 +179,7 @@ export class AgendamentosController {
     );
   }
 
-  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR', 'TEC', 'ARTHUR_SABOYA')
+  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR', 'TEC', 'ARTHUR_SABOYA', 'ADM_ARTHUR_SABOYA')
   @Get('solicitacoes-pre-projetos/arthur-saboya/portal/buscar-tudo')
   @ApiOperation({
     summary:
@@ -212,7 +212,7 @@ export class AgendamentosController {
     );
   }
 
-  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR', 'TEC', 'ARTHUR_SABOYA')
+  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR', 'TEC', 'ARTHUR_SABOYA', 'ADM_ARTHUR_SABOYA')
   @Get('solicitacoes-pre-projetos/arthur-saboya/portal/:id')
   @ApiOperation({
     summary:
@@ -228,7 +228,7 @@ export class AgendamentosController {
     );
   }
 
-  @Permissoes('ADM', 'DEV', 'TEC', 'ARTHUR_SABOYA')
+  @Permissoes('ADM', 'DEV', 'TEC', 'ARTHUR_SABOYA', 'ADM_ARTHUR_SABOYA')
   @Post('solicitacoes-pre-projetos/arthur-saboya/portal/:id/mensagens')
   @ApiOperation({
     summary:
@@ -246,7 +246,7 @@ export class AgendamentosController {
     );
   }
 
-  @Permissoes('ARTHUR_SABOYA', 'DEV')
+  @Permissoes('ARTHUR_SABOYA', 'ADM_ARTHUR_SABOYA', 'DEV')
   @Post(
     'solicitacoes-pre-projetos/arthur-saboya/portal/:id/confirmar-resposta-enviada',
   )
@@ -282,7 +282,7 @@ export class AgendamentosController {
     );
   }
 
-  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'ARTHUR_SABOYA')
+  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'ARTHUR_SABOYA', 'ADM_ARTHUR_SABOYA')
   @Post(
     'solicitacoes-pre-projetos/arthur-saboya/portal/:id/criar-agendamento',
   )

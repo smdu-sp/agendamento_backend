@@ -303,7 +303,7 @@ export class UsuariosService {
     return this.prisma.usuario.findMany({
       where: {
         status: true,
-        permissao: 'ARTHUR_SABOYA',
+        permissao: { in: ['ARTHUR_SABOYA', 'ADM_ARTHUR_SABOYA'] },
       },
       orderBy: { nome: 'asc' },
       select: { id: true, nome: true, login: true, email: true },
@@ -351,7 +351,10 @@ export class UsuariosService {
         );
       }
       divisaoId = usuarioLogado.divisaoId;
-    } else if (permissao === 'ARTHUR_SABOYA') {
+    } else if (
+      permissao === 'ARTHUR_SABOYA' ||
+      permissao === 'ADM_ARTHUR_SABOYA'
+    ) {
       divisaoId = await this.obterDivisaoArthurSaboyaId();
     } else if (!divisaoId && permissao === 'TEC') {
       divisaoId = await this.inferirDivisaoIdPorLoginNoSgu(createUsuarioDto.login);
@@ -535,7 +538,10 @@ export class UsuariosService {
     const permissaoValida = permissaoBase
       ? this.validaPermissaoCriador(permissaoBase, usuarioLogado.permissao)
       : $Enums.Permissao.PORTARIA;
-    if (permissaoValida === 'ARTHUR_SABOYA') {
+    if (
+      permissaoValida === 'ARTHUR_SABOYA' ||
+      permissaoValida === 'ADM_ARTHUR_SABOYA'
+    ) {
       divisaoIdFinal = await this.obterDivisaoArthurSaboyaId();
     }
     await this.prisma.usuario.update({

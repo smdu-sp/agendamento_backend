@@ -9,6 +9,8 @@ const PERMISSOES_VALIDAS: Permissao[] = [
   'DEV',
   'ADM',
   'TEC',
+  'ARTHUR_SABOYA',
+  'ADM_ARTHUR_SABOYA',
   'USR',
   'PONTO_FOCAL',
   'COORDENADOR',

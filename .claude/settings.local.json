@@ -14,7 +14,19 @@
       "Read(//c/Users/d854440/**)",
       "Bash(find \"c:/Users/d854440\" -name \"server.js\" -o -name \"app.js\" -o -name \"index.js\" 2>/dev/null | grep -v \"node_modules\\\\|.next\" | head -20)",
       "Bash(Get-Content \"c:/Users/d854440/Sistemas/Agendamentos/agendamento_backend/.claude/settings.local.json\")",
-      "Bash(Get-Content \"c:/Users/d854440/Sistemas/Agendamentos/agendamento_backend/.env.local\")"
+      "Bash(Get-Content \"c:/Users/d854440/Sistemas/Agendamentos/agendamento_backend/.env.local\")",
+      "Bash(node -e \"console.log\\(require\\('./node_modules/next/package.json'\\).version\\)\")",
+      "Bash(node -e \"console.log\\(require\\('./node_modules/react/package.json'\\).version\\)\")",
+      "Bash(npm install *)",
+      "Bash(mkdir -p prisma/migrations/0_init)",
+      "Bash(npx prisma *)",
+      "Bash(npm run *)",
+      "Bash(node ./_tmp-bcrypt.mjs)",
+      "Bash(netstat -ano)",
+      "Bash(xargs echo \"untracked/changed files:\")"
+    ],
+    "additionalDirectories": [
+      "\\tmp"
     ]
   }
 }
