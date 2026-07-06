@@ -35,6 +35,7 @@ export function podeSerTecnicoAtendimentoArthurSaboya(
 
 export const STATUS_QUE_PERMITEM_CONCLUSAO_CHAMADO = [
   'SOLICITADO',
+  'AGUARDANDO_DATA',
   'AGENDAMENTO_CRIADO',
 ] as const;
 

@@ -56,6 +56,18 @@ import {
   DashboardPorSemanaDTO,
   DashboardMotivoNaoRealizacaoDTO,
 } from './dto/dashboard-response.dto';
+import {
+  DashboardArthurSaboyaResponseDTO,
+  DashboardArthurSaboyaFunilDTO,
+  DashboardArthurSaboyaFaixaTempoDTO,
+  DashboardArthurSaboyaPorSemanaDTO,
+  DashboardArthurSaboyaPorNaturezaDTO,
+  DashboardArthurSaboyaPorCoordenadoriaDTO,
+  DashboardArthurSaboyaAgingDTO,
+  DashboardArthurSaboyaAgingEtapaDTO,
+  DashboardArthurSaboyaChamadoAntigoDTO,
+  DashboardArthurSaboyaTempoEtapaDTO,
+} from './dto/dashboard-arthur-saboya-response.dto';
 import { UsuariosService } from 'src/usuarios/usuarios.service';
 import { CoordenadoriasService } from 'src/coordenadorias/coordenadorias.service';
 import { EmailService } from 'src/email/email.service';
@@ -414,14 +426,12 @@ export class AgendamentosService {
     return new Date(Date.UTC(ano, mesIndex0, dia, hora, minuto, segundo));
   }
 
-  private static readonly REGEX_SOLUCIONADO_COM_AUTOR =
-    /^Status do chamado alterado para Solucionado por .+ em (\d{2}\/\d{2}\/\d{4}, às \d{2}:\d{2})$/;
-
   private formatarMensagemSolucionadoParaMunicipe(corpo: string): string {
     const texto = String(corpo || '').trim();
-    const match = texto.match(AgendamentosService.REGEX_SOLUCIONADO_COM_AUTOR);
-    if (!match?.[1]) return corpo;
-    return 'Sua solicitação foi encerrada pela Equipe da Sala Arthur Saboya.';
+    if (texto.startsWith('Status do chamado alterado para Solucionado')) {
+      return 'Sua solicitação foi encerrada pela Equipe da Sala Arthur Saboya.';
+    }
+    return corpo;
   }
 
   /**
@@ -791,27 +801,6 @@ export class AgendamentosService {
       return this.obterSolicitacaoDetalheMunicipe(id, municipe);
     }
 
-    const agora = new Date();
-    const dataHoraTexto = new Intl.DateTimeFormat('pt-BR', {
-      timeZone: 'America/Sao_Paulo',
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).format(agora);
-    const dataHoraCurta = new Intl.DateTimeFormat('pt-BR', {
-      timeZone: 'America/Sao_Paulo',
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    })
-      .format(agora)
-      .replace(', ', ' ');
     await this.prisma.$transaction(async (tx) => {
       await tx.solicitacaoPreProjetoArthurSaboya.update({
         where: { id },
@@ -822,8 +811,7 @@ export class AgendamentosService {
           solicitacaoId: id,
           autor: AutorMensagemPreProjetoArthurSaboya.SISTEMA,
           corpo:
-            'Status do chamado alterado para Solucionado pelo [b]interessado[/b] ' +
-            `em ${dataHoraTexto.replace(' ', ', às ')} · ${dataHoraCurta}`,
+            'Status do chamado alterado para Solucionado pelo [b]interessado[/b].',
           municipeContaId: municipe.id,
         },
       });
@@ -1777,30 +1765,9 @@ export class AgendamentosService {
     const s = await this.assertSolicitacaoPortalArthurSaboya(refUuidOuProtocolo, usuario);
     if (!statusPermiteConclusaoChamadoArthurSaboya(s.status)) {
       throw new BadRequestException(
-        'Só é possível concluir solicitações com status Solicitado ou Agendamento criado.',
+        'Só é possível concluir solicitações com status Solicitado, Aguardando data ou Agendamento criado.',
       );
     }
-    const agora = new Date();
-    const dataHoraTexto = new Intl.DateTimeFormat('pt-BR', {
-      timeZone: 'America/Sao_Paulo',
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).format(agora);
-    const dataHoraCurta = new Intl.DateTimeFormat('pt-BR', {
-      timeZone: 'America/Sao_Paulo',
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    })
-      .format(agora)
-      .replace(', ', ' ');
     await this.prisma.$transaction(async (tx) => {
       await tx.solicitacaoPreProjetoArthurSaboya.update({
         where: { id: s.id },
@@ -1817,8 +1784,7 @@ export class AgendamentosService {
           solicitacaoId: s.id,
           autor: AutorMensagemPreProjetoArthurSaboya.SISTEMA,
           corpo:
-            'Status do chamado alterado para Solucionado pela [b]Sala Arthur Saboya[/b] ' +
-            `em ${dataHoraTexto.replace(' ', ', às ')} · ${dataHoraCurta}`,
+            'Status do chamado alterado para Solucionado pela [b]Sala Arthur Saboya[/b].',
         },
       });
     });
@@ -4374,6 +4340,737 @@ export class AgendamentosService {
       ...(porDia != null && { porDia }),
       ...(porSemana != null && { porSemana }),
       motivosNaoRealizacao,
+    };
+  }
+
+  private static readonly DASHBOARD_ARTHUR_PRAZO_DIAS = 7;
+
+  private static diasEntreDatas(a: Date, b: Date): number {
+    return (b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24);
+  }
+
+  private static mediaNumeros(nums: number[]): number | null {
+    if (nums.length === 0) return null;
+    return nums.reduce((acc, n) => acc + n, 0) / nums.length;
+  }
+
+  private static medianaNumeros(nums: number[]): number | null {
+    if (nums.length === 0) return null;
+    const ordenados = [...nums].sort((x, y) => x - y);
+    const meio = Math.floor(ordenados.length / 2);
+    return ordenados.length % 2 === 1
+      ? ordenados[meio]
+      : (ordenados[meio - 1] + ordenados[meio]) / 2;
+  }
+
+  private static arredondar1(n: number | null): number | null {
+    if (n == null || Number.isNaN(n)) return null;
+    return Math.round(n * 10) / 10;
+  }
+
+  private static getISOWeek(date: Date): number {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + 4 - (d.getDay() || 7));
+    const yearStart = new Date(d.getFullYear(), 0, 1);
+    return Math.ceil(
+      ((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7,
+    );
+  }
+
+  private static rotuloEtapaStatus(
+    status: StatusSolicitacaoPreProjeto,
+  ): string {
+    switch (status) {
+      case StatusSolicitacaoPreProjeto.SOLICITADO:
+        return 'Aguardando análise da Sala';
+      case StatusSolicitacaoPreProjeto.AGUARDANDO_DATA:
+        return 'Aguardando agendamento';
+      case StatusSolicitacaoPreProjeto.AGENDAMENTO_CRIADO:
+        return 'Aguardando atendimento técnico';
+      case StatusSolicitacaoPreProjeto.RESPONDIDO:
+        return 'Concluído';
+      default:
+        return status;
+    }
+  }
+
+  private async whereDashboardArthurSaboya(
+    usuario: Usuario,
+    coordenadoriaIdFiltro?: string,
+    naturezaValorFiltro?: string,
+  ): Promise<Prisma.SolicitacaoPreProjetoArthurSaboyaWhereInput> {
+    const andParts: Prisma.SolicitacaoPreProjetoArthurSaboyaWhereInput[] = [];
+
+    if (naturezaValorFiltro?.trim()) {
+      andParts.push({ naturezaValor: naturezaValorFiltro.trim() });
+    }
+
+    const perm = usuario.permissao;
+    const permReal = (usuario as any).permissaoReal as string | undefined;
+    const isDevRealOuEfetivo = perm === 'DEV' || permReal === 'DEV';
+    const isAdmRealOuEfetivo = perm === 'ADM' || permReal === 'ADM';
+    const divSala = this.divisaoPreProjetosEnv();
+    const divUser = (usuario as any).divisaoId as string | undefined;
+
+    if (
+      isDevRealOuEfetivo ||
+      isAdmRealOuEfetivo ||
+      isAdmArthurSaboya(perm) ||
+      perm === 'ARTHUR_SABOYA' ||
+      (perm === 'PONTO_FOCAL' && divSala && divUser === divSala)
+    ) {
+      if (coordenadoriaIdFiltro?.trim()) {
+        andParts.push({ coordenadoriaId: coordenadoriaIdFiltro.trim() });
+      }
+      return andParts.length > 0 ? { AND: andParts } : {};
+    }
+
+    if (perm === 'TEC') {
+      const coordId = await this.coordenadoriaIdDoUsuarioLogado(usuario);
+      if (!coordId) {
+        throw new ForbiddenException(
+          'Acesso restrito a usuários vinculados a uma coordenadoria.',
+        );
+      }
+      andParts.push({
+        coordenadoriaId: coordId,
+        agendamento: { is: { tecnicoId: usuario.id } },
+      });
+      return { AND: andParts };
+    }
+
+    if (perm === 'COORDENADOR' || perm === 'PONTO_FOCAL') {
+      const coordId = await this.coordenadoriaIdDoUsuarioLogado(usuario);
+      if (!coordId) {
+        throw new ForbiddenException(
+          'Acesso restrito a usuários vinculados a uma coordenadoria.',
+        );
+      }
+      andParts.push({
+        coordenadoriaId: coordenadoriaIdFiltro?.trim() || coordId,
+      });
+      return { AND: andParts };
+    }
+
+    throw new ForbiddenException(
+      'Sem permissão para acessar o dashboard Arthur Saboya.',
+    );
+  }
+
+  /**
+   * Dashboard de gestão do fluxo Sala Arthur Saboya → coordenadorias.
+   */
+  async getDashboardArthurSaboya(
+    tipoPeriodo: 'semana' | 'mes' | 'ano' = 'ano',
+    ano?: number,
+    mes?: number,
+    semanaInicio?: string,
+    dataInicioQuery?: string,
+    dataFimQuery?: string,
+    coordenadoriaId?: string,
+    naturezaValor?: string,
+    usuarioLogado?: Usuario,
+  ): Promise<DashboardArthurSaboyaResponseDTO> {
+    if (!usuarioLogado) {
+      throw new ForbiddenException('Autenticação necessária.');
+    }
+
+    const anoFiltro = ano ?? new Date().getFullYear();
+    let dataInicio: Date;
+    let dataFim: Date;
+
+    if (dataInicioQuery?.trim() && dataFimQuery?.trim()) {
+      const dIni = new Date(dataInicioQuery.trim());
+      const dFim = new Date(dataFimQuery.trim());
+      if (!Number.isNaN(dIni.getTime()) && !Number.isNaN(dFim.getTime())) {
+        dataInicio = dIni;
+        dataFim = dFim;
+      } else {
+        dataInicio = new Date(anoFiltro, 0, 1, 0, 0, 0, 0);
+        dataFim = new Date(anoFiltro, 11, 31, 23, 59, 59, 999);
+      }
+    } else if (tipoPeriodo === 'semana') {
+      if (semanaInicio?.trim()) {
+        const parts = semanaInicio.trim().split('-').map(Number);
+        if (parts.length === 3 && parts[0] && parts[1] && parts[2]) {
+          dataInicio = new Date(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0);
+        } else {
+          const d = new Date();
+          const day = d.getDay();
+          const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+          dataInicio = new Date(d.getFullYear(), d.getMonth(), diff, 0, 0, 0, 0);
+        }
+      } else {
+        const d = new Date();
+        const day = d.getDay();
+        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+        dataInicio = new Date(d.getFullYear(), d.getMonth(), diff, 0, 0, 0, 0);
+      }
+      dataFim = new Date(dataInicio);
+      dataFim.setDate(dataFim.getDate() + 6);
+      dataFim.setHours(23, 59, 59, 999);
+    } else if (tipoPeriodo === 'mes' && mes != null && mes >= 1 && mes <= 12) {
+      dataInicio = new Date(anoFiltro, mes - 1, 1, 0, 0, 0, 0);
+      const ultimoDia = new Date(anoFiltro, mes, 0).getDate();
+      dataFim = new Date(anoFiltro, mes - 1, ultimoDia, 23, 59, 59, 999);
+    } else {
+      dataInicio = new Date(anoFiltro, 0, 1, 0, 0, 0, 0);
+      dataFim = new Date(anoFiltro, 11, 31, 23, 59, 59, 999);
+    }
+
+    const escopo = await this.whereDashboardArthurSaboya(
+      usuarioLogado,
+      coordenadoriaId,
+      naturezaValor,
+    );
+
+    const selectPeriodo = {
+      id: true,
+      protocolo: true,
+      criadoEm: true,
+      atualizadoEm: true,
+      status: true,
+      coordenadoriaId: true,
+      naturezaValor: true,
+      naturezaTexto: true,
+      dataAgendamento: true,
+      agendamentoId: true,
+      avaliacaoNota: true,
+      coordenadoria: { select: { id: true, sigla: true, nome: true } },
+      agendamento: {
+        select: { id: true, status: true, dataHora: true },
+      },
+      mensagens: {
+        where: { autor: AutorMensagemPreProjetoArthurSaboya.PONTO_FOCAL },
+        select: { criadoEm: true },
+        orderBy: { criadoEm: 'asc' as const },
+        take: 1,
+      },
+    };
+
+    const wherePeriodo: Prisma.SolicitacaoPreProjetoArthurSaboyaWhereInput = {
+      AND: [
+        escopo,
+        { criadoEm: { gte: dataInicio, lte: dataFim } },
+      ],
+    };
+
+    const whereAberto: Prisma.SolicitacaoPreProjetoArthurSaboyaWhereInput = {
+      AND: [
+        escopo,
+        { status: { not: StatusSolicitacaoPreProjeto.RESPONDIDO } },
+      ],
+    };
+
+    const agora = new Date();
+
+    const [periodoRows, abertoRows, abertoAgingRows, totalEmAberto, totalForaPrazo] =
+      await Promise.all([
+      this.prisma.solicitacaoPreProjetoArthurSaboya.findMany({
+        where: wherePeriodo,
+        select: selectPeriodo,
+      }),
+      this.prisma.solicitacaoPreProjetoArthurSaboya.findMany({
+        where: whereAberto,
+        select: {
+          id: true,
+          protocolo: true,
+          criadoEm: true,
+          status: true,
+          naturezaTexto: true,
+          coordenadoriaId: true,
+          coordenadoria: { select: { sigla: true, nome: true } },
+        },
+        orderBy: { criadoEm: 'asc' },
+        take: 10,
+      }),
+      this.prisma.solicitacaoPreProjetoArthurSaboya.findMany({
+        where: whereAberto,
+        select: { criadoEm: true, status: true },
+      }),
+      this.prisma.solicitacaoPreProjetoArthurSaboya.count({
+        where: whereAberto,
+      }),
+      this.prisma.solicitacaoPreProjetoArthurSaboya.count({
+        where: {
+          AND: [
+            escopo,
+            { status: { not: StatusSolicitacaoPreProjeto.RESPONDIDO } },
+            {
+              criadoEm: {
+                lt: new Date(
+                  agora.getTime() -
+                    AgendamentosService.DASHBOARD_ARTHUR_PRAZO_DIAS *
+                      24 *
+                      60 *
+                      60 *
+                      1000,
+                ),
+              },
+            },
+          ],
+        },
+      }),
+    ]);
+
+    const foiEncaminhado = (r: (typeof periodoRows)[number]) =>
+      !!r.coordenadoriaId;
+
+    const resolvidoSala = (r: (typeof periodoRows)[number]) =>
+      r.status === StatusSolicitacaoPreProjeto.RESPONDIDO &&
+      !r.coordenadoriaId;
+
+    const analisado = (r: (typeof periodoRows)[number]) =>
+      r.status !== StatusSolicitacaoPreProjeto.SOLICITADO ||
+      r.mensagens.length > 0;
+
+    /** Agendamento confirmado (vínculo criado ou status Agendado). */
+    const comAgendamento = (r: (typeof periodoRows)[number]) =>
+      !!r.agendamentoId ||
+      r.status === StatusSolicitacaoPreProjeto.AGENDAMENTO_CRIADO;
+
+    /** Encerrado após fluxo técnico: solucionado no chamado ou atendimento realizado. */
+    const concluidoPosTecnico = (r: (typeof periodoRows)[number]) => {
+      if (
+        r.status === StatusSolicitacaoPreProjeto.RESPONDIDO &&
+        !!r.coordenadoriaId
+      ) {
+        return true;
+      }
+      const ag = r.agendamento;
+      return (
+        ag?.status === StatusAgendamento.ATENDIDO ||
+        ag?.status === StatusAgendamento.CONCLUIDO
+      );
+    };
+
+    const idsCoordenadoria = new Set<string>();
+    for (const r of periodoRows) {
+      if (r.coordenadoriaId) idsCoordenadoria.add(r.coordenadoriaId);
+    }
+    for (const r of abertoRows) {
+      if (r.coordenadoriaId) idsCoordenadoria.add(r.coordenadoriaId);
+    }
+    const coordsDb =
+      idsCoordenadoria.size > 0
+        ? await this.prisma.coordenadoria.findMany({
+            where: { id: { in: [...idsCoordenadoria] } },
+            select: { id: true, sigla: true },
+          })
+        : [];
+    const siglaPorId = new Map(coordsDb.map((c) => [c.id, c.sigla]));
+    const siglaCoord = (
+      coordId: string | null | undefined,
+      rel?: { sigla?: string | null; nome?: string | null } | null,
+    ): string | null => {
+      if (!coordId) return null;
+      return rel?.sigla || siglaPorId.get(coordId) || null;
+    };
+
+    const chamadosRecebidos = periodoRows.length;
+    const totalAnalisados = periodoRows.filter(analisado).length;
+    const encerradosSala = periodoRows.filter(resolvidoSala).length;
+    const totalEncaminhados = periodoRows.filter(foiEncaminhado).length;
+    const totalAgendamentos = periodoRows.filter(comAgendamento).length;
+    const totalConcluidosPosTecnico = periodoRows.filter(concluidoPosTecnico).length;
+
+    const taxaResolucaoSala =
+      totalAnalisados > 0
+        ? Math.round((encerradosSala / totalAnalisados) * 1000) / 10
+        : 0;
+    const taxaEncaminhamento =
+      chamadosRecebidos > 0
+        ? Math.round((totalEncaminhados / chamadosRecebidos) * 1000) / 10
+        : 0;
+
+    const temposPrimeiraResposta: number[] = [];
+    const temposResolucao: number[] = [];
+    const temposEncaminhamentoAgendamento: number[] = [];
+    const temposAgendamentoAtendimento: number[] = [];
+
+    for (const r of periodoRows) {
+      const primeiraMsg = r.mensagens[0]?.criadoEm;
+      if (primeiraMsg) {
+        temposPrimeiraResposta.push(
+          AgendamentosService.diasEntreDatas(r.criadoEm, primeiraMsg),
+        );
+      }
+      if (r.status === StatusSolicitacaoPreProjeto.RESPONDIDO) {
+        temposResolucao.push(
+          AgendamentosService.diasEntreDatas(r.criadoEm, r.atualizadoEm),
+        );
+      }
+      if (foiEncaminhado(r) && r.dataAgendamento) {
+        temposEncaminhamentoAgendamento.push(
+          AgendamentosService.diasEntreDatas(r.criadoEm, r.dataAgendamento),
+        );
+      }
+      if (
+        r.agendamento?.dataHora &&
+        r.dataAgendamento &&
+        r.agendamento.dataHora >= r.dataAgendamento
+      ) {
+        temposAgendamentoAtendimento.push(
+          AgendamentosService.diasEntreDatas(
+            r.dataAgendamento,
+            r.agendamento.dataHora,
+          ),
+        );
+      }
+    }
+
+    const faixasResposta = [
+      { faixa: 'Até 1 dia', max: 1 },
+      { faixa: '2–3 dias', max: 3 },
+      { faixa: '4–7 dias', max: 7 },
+      { faixa: 'Acima de 7 dias', max: Infinity },
+    ];
+    const contagemFaixas = [0, 0, 0, 0];
+    for (const t of temposPrimeiraResposta) {
+      if (t <= 1) contagemFaixas[0] += 1;
+      else if (t <= 3) contagemFaixas[1] += 1;
+      else if (t <= 7) contagemFaixas[2] += 1;
+      else contagemFaixas[3] += 1;
+    }
+    const totalComResposta = temposPrimeiraResposta.length;
+    const distribuicaoPrimeiraResposta: DashboardArthurSaboyaFaixaTempoDTO[] =
+      faixasResposta.map((f, i) => ({
+        faixa: f.faixa,
+        quantidade: contagemFaixas[i],
+        percentual:
+          totalComResposta > 0
+            ? Math.round((contagemFaixas[i] / totalComResposta) * 1000) / 10
+            : 0,
+      }));
+
+    const temposPorEtapa: DashboardArthurSaboyaTempoEtapaDTO[] = [
+      {
+        etapa: 'Abertura → resposta da Sala',
+        mediaDias:
+          AgendamentosService.arredondar1(
+            AgendamentosService.mediaNumeros(temposPrimeiraResposta),
+          ) ?? 0,
+        medianaDias:
+          AgendamentosService.arredondar1(
+            AgendamentosService.medianaNumeros(temposPrimeiraResposta),
+          ) ?? 0,
+      },
+      {
+        etapa: 'Encaminhamento → agendamento',
+        mediaDias:
+          AgendamentosService.arredondar1(
+            AgendamentosService.mediaNumeros(temposEncaminhamentoAgendamento),
+          ) ?? 0,
+        medianaDias:
+          AgendamentosService.arredondar1(
+            AgendamentosService.medianaNumeros(temposEncaminhamentoAgendamento),
+          ) ?? 0,
+      },
+      {
+        etapa: 'Agendamento → atendimento',
+        mediaDias:
+          AgendamentosService.arredondar1(
+            AgendamentosService.mediaNumeros(temposAgendamentoAtendimento),
+          ) ?? 0,
+        medianaDias:
+          AgendamentosService.arredondar1(
+            AgendamentosService.medianaNumeros(temposAgendamentoAtendimento),
+          ) ?? 0,
+      },
+      {
+        etapa: 'Abertura → encerramento',
+        mediaDias:
+          AgendamentosService.arredondar1(
+            AgendamentosService.mediaNumeros(temposResolucao),
+          ) ?? 0,
+        medianaDias:
+          AgendamentosService.arredondar1(
+            AgendamentosService.medianaNumeros(temposResolucao),
+          ) ?? 0,
+      },
+    ];
+
+    const pct = (num: number, den: number) =>
+      den > 0 ? Math.round((num / den) * 1000) / 10 : 0;
+
+    const funil: DashboardArthurSaboyaFunilDTO[] = [
+      {
+        etapa: 'Chamados abertos',
+        quantidade: chamadosRecebidos,
+        percentual: 100,
+      },
+      {
+        etapa: 'Analisados pela Sala',
+        quantidade: totalAnalisados,
+        percentual: pct(totalAnalisados, chamadosRecebidos),
+      },
+      {
+        etapa: 'Resolvidos na Sala',
+        quantidade: encerradosSala,
+        percentual: pct(encerradosSala, totalAnalisados || chamadosRecebidos),
+      },
+      {
+        etapa: 'Encaminhados p/ coordenadoria',
+        quantidade: totalEncaminhados,
+        percentual: pct(totalEncaminhados, chamadosRecebidos),
+      },
+      {
+        etapa: 'Agendamentos realizados',
+        quantidade: totalAgendamentos,
+        percentual: pct(totalAgendamentos, totalEncaminhados),
+      },
+      {
+        etapa: 'Atendimentos concluídos',
+        quantidade: totalConcluidosPosTecnico,
+        percentual: pct(totalConcluidosPosTecnico, totalAgendamentos),
+      },
+    ];
+
+    const porSemanaMap = new Map<number, { abertos: number; resolvidos: number }>();
+    for (const r of periodoRows) {
+      const w = AgendamentosService.getISOWeek(r.criadoEm);
+      const cur = porSemanaMap.get(w) ?? { abertos: 0, resolvidos: 0 };
+      cur.abertos += 1;
+      porSemanaMap.set(w, cur);
+    }
+    for (const r of periodoRows) {
+      if (r.status !== StatusSolicitacaoPreProjeto.RESPONDIDO) continue;
+      const w = AgendamentosService.getISOWeek(r.atualizadoEm);
+      const cur = porSemanaMap.get(w) ?? { abertos: 0, resolvidos: 0 };
+      cur.resolvidos += 1;
+      porSemanaMap.set(w, cur);
+    }
+    const porSemana: DashboardArthurSaboyaPorSemanaDTO[] = Array.from(
+      porSemanaMap.entries(),
+    )
+      .sort((a, b) => a[0] - b[0])
+      .map(([semana, v]) => ({
+        semana,
+        label: `S${semana}`,
+        abertos: v.abertos,
+        resolvidos: v.resolvidos,
+      }));
+
+    const naturezaMap = new Map<
+      string,
+      {
+        volume: number;
+        resolvidosSala: number;
+        encaminhados: number;
+        temposResolucao: number[];
+      }
+    >();
+    for (const r of periodoRows) {
+      const key = r.naturezaTexto || r.naturezaValor || 'Outros';
+      const cur = naturezaMap.get(key) ?? {
+        volume: 0,
+        resolvidosSala: 0,
+        encaminhados: 0,
+        temposResolucao: [],
+      };
+      cur.volume += 1;
+      if (resolvidoSala(r)) cur.resolvidosSala += 1;
+      if (foiEncaminhado(r)) cur.encaminhados += 1;
+      if (r.status === StatusSolicitacaoPreProjeto.RESPONDIDO) {
+        cur.temposResolucao.push(
+          AgendamentosService.diasEntreDatas(r.criadoEm, r.atualizadoEm),
+        );
+      }
+      naturezaMap.set(key, cur);
+    }
+    const porNatureza: DashboardArthurSaboyaPorNaturezaDTO[] = Array.from(
+      naturezaMap.entries(),
+    )
+      .map(([natureza, v]) => ({
+        natureza,
+        volume: v.volume,
+        resolvidosSala: v.resolvidosSala,
+        encaminhados: v.encaminhados,
+        tempoMedioResolucaoDias: AgendamentosService.arredondar1(
+          AgendamentosService.mediaNumeros(v.temposResolucao),
+        ),
+      }))
+      .sort((a, b) => b.volume - a.volume)
+      .slice(0, 10);
+
+    const coordMap = new Map<
+      string,
+      {
+        sigla: string;
+        encaminhados: number;
+        concluidos: number;
+        esperas: number[];
+        agendamentosPassados: number;
+        noShow: number;
+        atendidos: number;
+      }
+    >();
+    for (const r of periodoRows) {
+      if (!r.coordenadoriaId) continue;
+      const sigla =
+        siglaCoord(r.coordenadoriaId, r.coordenadoria) ?? '—';
+      const cur = coordMap.get(r.coordenadoriaId) ?? {
+        sigla,
+        encaminhados: 0,
+        concluidos: 0,
+        esperas: [],
+        agendamentosPassados: 0,
+        noShow: 0,
+        atendidos: 0,
+      };
+      cur.encaminhados += 1;
+      if (concluidoPosTecnico(r)) cur.concluidos += 1;
+      if (r.dataAgendamento) {
+        cur.esperas.push(
+          AgendamentosService.diasEntreDatas(r.criadoEm, r.dataAgendamento),
+        );
+      }
+      const ag = r.agendamento;
+      if (ag?.dataHora && ag.dataHora < agora) {
+        cur.agendamentosPassados += 1;
+        if (
+          ag.status === StatusAgendamento.ATENDIDO ||
+          ag.status === StatusAgendamento.CONCLUIDO
+        ) {
+          cur.atendidos += 1;
+        } else if (ag.status === StatusAgendamento.NAO_REALIZADO) {
+          cur.noShow += 1;
+        }
+      }
+      coordMap.set(r.coordenadoriaId, cur);
+    }
+    const porCoordenadoria: DashboardArthurSaboyaPorCoordenadoriaDTO[] =
+      Array.from(coordMap.entries())
+        .map(([coordenadoriaId, v]) => ({
+          coordenadoriaId,
+          coordenadoriaSigla: v.sigla,
+          encaminhados: v.encaminhados,
+          concluidos: v.concluidos,
+          tempoEsperaMedioDias: AgendamentosService.arredondar1(
+            AgendamentosService.mediaNumeros(v.esperas),
+          ),
+          taxaNoShow:
+            v.agendamentosPassados > 0
+              ? Math.round((v.noShow / v.agendamentosPassados) * 1000) / 10
+              : 0,
+        }))
+        .sort((a, b) => b.encaminhados - a.encaminhados);
+
+    const chamadosEmAberto = totalEmAberto;
+    const chamadosForaPrazo = totalForaPrazo;
+    const agingBuckets = [
+      { faixa: '0–2 dias', min: 0, max: 2 },
+      { faixa: '3–5 dias', min: 3, max: 5 },
+      { faixa: '6–10 dias', min: 6, max: 10 },
+      { faixa: '11–20 dias', min: 11, max: 20 },
+      { faixa: '+20 dias', min: 21, max: Infinity },
+    ];
+    const agingContagem = [0, 0, 0, 0, 0];
+    const agingEtapaMap = new Map<string, number>();
+
+    for (const r of abertoAgingRows) {
+      const idade = Math.floor(
+        AgendamentosService.diasEntreDatas(r.criadoEm, agora),
+      );
+      const bucketIdx = agingBuckets.findIndex(
+        (b) => idade >= b.min && idade <= b.max,
+      );
+      if (bucketIdx >= 0) agingContagem[bucketIdx] += 1;
+
+      const etapa = AgendamentosService.rotuloEtapaStatus(r.status);
+      agingEtapaMap.set(etapa, (agingEtapaMap.get(etapa) ?? 0) + 1);
+    }
+
+    const aging: DashboardArthurSaboyaAgingDTO[] = agingBuckets.map((b, i) => ({
+      faixa: b.faixa,
+      quantidade: agingContagem[i],
+    }));
+    const agingPorEtapa: DashboardArthurSaboyaAgingEtapaDTO[] = Array.from(
+      agingEtapaMap.entries(),
+    ).map(([etapa, quantidade]) => ({ etapa, quantidade }));
+
+    const chamadosMaisAntigos: DashboardArthurSaboyaChamadoAntigoDTO[] =
+      abertoRows.slice(0, 10).map((r) => ({
+        protocolo: r.protocolo,
+        natureza: r.naturezaTexto,
+        etapa: AgendamentosService.rotuloEtapaStatus(r.status),
+        coordenadoria: siglaCoord(r.coordenadoriaId, r.coordenadoria),
+        idadeDias: Math.floor(
+          AgendamentosService.diasEntreDatas(r.criadoEm, agora),
+        ),
+      }));
+
+    const avaliacoes = periodoRows
+      .map((r) => r.avaliacaoNota)
+      .filter((n): n is number => n != null);
+    const satisfacaoMedia =
+      avaliacoes.length > 0
+        ? Math.round(
+            (avaliacoes.reduce((a, b) => a + b, 0) / avaliacoes.length) * 10,
+          ) / 10
+        : null;
+    const positivas = avaliacoes.filter((n) => n >= 4).length;
+    const percentualAvaliacoesPositivas =
+      avaliacoes.length > 0
+        ? Math.round((positivas / avaliacoes.length) * 1000) / 10
+        : null;
+
+    let agendamentosPassados = 0;
+    let noShowTotal = 0;
+    let atendidosTotal = 0;
+    for (const r of periodoRows) {
+      const ag = r.agendamento;
+      if (!ag?.dataHora || ag.dataHora >= agora) continue;
+      agendamentosPassados += 1;
+      if (
+        ag.status === StatusAgendamento.ATENDIDO ||
+        ag.status === StatusAgendamento.CONCLUIDO
+      ) {
+        atendidosTotal += 1;
+      } else if (ag.status === StatusAgendamento.NAO_REALIZADO) {
+        noShowTotal += 1;
+      }
+    }
+
+    return {
+      chamadosRecebidos,
+      encerradosSala,
+      taxaResolucaoSala,
+      encaminhados: totalEncaminhados,
+      taxaEncaminhamento,
+      tempoMedioPrimeiraRespostaDias: AgendamentosService.arredondar1(
+        AgendamentosService.mediaNumeros(temposPrimeiraResposta),
+      ),
+      tempoMedianoPrimeiraRespostaDias: AgendamentosService.arredondar1(
+        AgendamentosService.medianaNumeros(temposPrimeiraResposta),
+      ),
+      tempoMedioResolucaoDias: AgendamentosService.arredondar1(
+        AgendamentosService.mediaNumeros(temposResolucao),
+      ),
+      chamadosEmAberto,
+      chamadosForaPrazo,
+      funil,
+      taxaAgendamentoAposEncaminhamento: pct(
+        totalAgendamentos,
+        totalEncaminhados,
+      ),
+      taxaComparecimento: pct(atendidosTotal, agendamentosPassados),
+      taxaNoShow: pct(noShowTotal, agendamentosPassados),
+      taxaConclusaoAposAtendimento: pct(
+        totalConcluidosPosTecnico,
+        atendidosTotal,
+      ),
+      distribuicaoPrimeiraResposta,
+      temposPorEtapa,
+      porSemana,
+      porNatureza,
+      porCoordenadoria,
+      aging,
+      agingPorEtapa,
+      chamadosMaisAntigos,
+      satisfacaoMedia,
+      percentualAvaliacoesPositivas,
     };
   }
 }

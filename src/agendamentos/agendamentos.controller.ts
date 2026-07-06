@@ -47,6 +47,7 @@ import {
   AgendamentoResponseDTO,
 } from './dto/agendamento-response.dto';
 import { DashboardResponseDTO } from './dto/dashboard-response.dto';
+import { DashboardArthurSaboyaResponseDTO } from './dto/dashboard-arthur-saboya-response.dto';
 import * as XLSX from 'xlsx';
 
 @ApiTags('Agendamentos')
@@ -403,6 +404,48 @@ export class AgendamentosController {
       dataFim,
       coordenadoriaId,
       divisaoId,
+      usuario,
+    );
+  }
+
+  @Permissoes(
+    'ADM',
+    'DEV',
+    'PONTO_FOCAL',
+    'COORDENADOR',
+    'TEC',
+    'ARTHUR_SABOYA',
+    'ADM_ARTHUR_SABOYA',
+  )
+  @Get('solicitacoes-pre-projetos/arthur-saboya/dashboard')
+  @ApiOperation({
+    summary:
+      'Dashboard de gestão — fluxo Sala Arthur Saboya (KPIs, funil, aging)',
+  })
+  getDashboardArthurSaboya(
+    @Query('tipoPeriodo') tipoPeriodo?: 'semana' | 'mes' | 'ano',
+    @Query('ano') ano?: string,
+    @Query('mes') mes?: string,
+    @Query('semanaInicio') semanaInicio?: string,
+    @Query('dataInicio') dataInicio?: string,
+    @Query('dataFim') dataFim?: string,
+    @Query('coordenadoriaId') coordenadoriaId?: string,
+    @Query('naturezaValor') naturezaValor?: string,
+    @UsuarioAtual() usuario?: Usuario,
+  ): Promise<DashboardArthurSaboyaResponseDTO> {
+    const periodo =
+      tipoPeriodo === 'semana' || tipoPeriodo === 'mes' || tipoPeriodo === 'ano'
+        ? tipoPeriodo
+        : 'ano';
+    return this.agendamentosService.getDashboardArthurSaboya(
+      periodo,
+      ano ? +ano : undefined,
+      mes ? +mes : undefined,
+      semanaInicio,
+      dataInicio,
+      dataFim,
+      coordenadoriaId,
+      naturezaValor,
       usuario,
     );
   }

@@ -9,7 +9,7 @@ import {
 import { CreateUsuarioDto } from './dto/create-usuario.dto';
 import { UpdateUsuarioDto } from './dto/update-usuario.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { $Enums, Permissao, Usuario } from '@prisma/client';
+import { $Enums, Prisma, Usuario } from '@prisma/client';
 
 /** Contexto do usuário logado (sem senha) para autorização. */
 type UsuarioLogadoContext = Pick<Usuario, 'permissao' | 'divisaoId'>;
@@ -39,6 +39,27 @@ export class UsuariosService {
       .replace(/\s+/g, '');
   }
 
+  private readonly permissoesConhecidas = [
+    'DEV',
+    'ADM',
+    'TEC',
+    'ARTHUR_SABOYA',
+    'ADM_ARTHUR_SABOYA',
+    'USR',
+    'PONTO_FOCAL',
+    'COORDENADOR',
+    'PORTARIA',
+    'DIRETOR',
+  ] as const;
+
+  private sanitizarDivisaoId(
+    divisaoId?: string | null,
+  ): string | null | undefined {
+    if (divisaoId === undefined) return undefined;
+    const valor = String(divisaoId).trim();
+    return valor || null;
+  }
+
   private normalizarPermissao(
     permissao: unknown,
   ): $Enums.Permissao | undefined {
@@ -46,9 +67,13 @@ export class UsuariosService {
     const valor = permissao.trim();
     if (!valor) return undefined;
     const permissoesValidas = Object.values($Enums.Permissao) as string[];
-    return permissoesValidas.includes(valor)
-      ? (valor as $Enums.Permissao)
-      : undefined;
+    if (permissoesValidas.includes(valor)) {
+      return valor as $Enums.Permissao;
+    }
+    if ((this.permissoesConhecidas as readonly string[]).includes(valor)) {
+      return valor as $Enums.Permissao;
+    }
+    return undefined;
   }
 
   private async inferirDivisaoIdPorLoginNoSgu(
@@ -363,7 +388,7 @@ export class UsuariosService {
       data: {
         ...createUsuarioDto,
         permissao,
-        divisaoId,
+        divisaoId: this.sanitizarDivisaoId(divisaoId) ?? undefined,
       },
     });
     if (!usuario)
@@ -382,6 +407,10 @@ export class UsuariosService {
     usuarioLogado?: UsuarioLogadoContext,
   ): Promise<UsuarioPaginadoResponseDTO> {
     [pagina, limite] = this.app.verificaPagina(pagina, limite);
+    const permissaoFiltro =
+      permissao && permissao !== ''
+        ? this.normalizarPermissao(permissao)
+        : undefined;
     const searchParams = {
       ...(usuarioLogado &&
         (usuarioLogado.permissao === 'PONTO_FOCAL' ||
@@ -406,7 +435,7 @@ export class UsuariosService {
                 ? false
                 : undefined,
         }),
-      ...(permissao && permissao !== '' && { permissao: Permissao[permissao] }),
+      ...(permissaoFiltro && { permissao: permissaoFiltro }),
     };
     const total: number = await this.prisma.usuario.count({
       where: searchParams,
@@ -520,36 +549,59 @@ export class UsuariosService {
     const {
       permissao: permissaoDto,
       divisaoId: divisaoDto,
-      ...rest
+      nome,
+      nomeSocial,
+      login,
+      email,
+      status,
+      avatar,
     } = updateUsuarioDto;
+    const divisaoDtoInformada =
+      divisaoDto !== undefined && String(divisaoDto).trim() !== ''
+        ? String(divisaoDto).trim()
+        : undefined;
     // Ponto Focal e Coordenador não podem alterar a divisão do usuário
     let divisaoIdFinal =
       usuarioLogado.permissao === 'PONTO_FOCAL' ||
       usuarioLogado.permissao === 'COORDENADOR'
         ? usuarioAntes.divisaoId
-        : divisaoDto !== undefined
-          ? divisaoDto
+        : divisaoDtoInformada !== undefined
+          ? divisaoDtoInformada
           : usuarioAntes.divisaoId;
     const permissaoDtoNormalizada = this.normalizarPermissao(permissaoDto);
     const permissaoAnteriorNormalizada = this.normalizarPermissao(
       usuarioAntes.permissao,
     );
-    const permissaoBase = permissaoDtoNormalizada ?? permissaoAnteriorNormalizada;
-    const permissaoValida = permissaoBase
-      ? this.validaPermissaoCriador(permissaoBase, usuarioLogado.permissao)
-      : $Enums.Permissao.PORTARIA;
+    const permissaoBase =
+      permissaoDtoNormalizada ?? permissaoAnteriorNormalizada;
+    if (!permissaoBase) {
+      throw new BadRequestException('Permissão inválida.');
+    }
+    const permissaoValida = this.validaPermissaoCriador(
+      permissaoBase,
+      usuarioLogado.permissao,
+    );
     if (
       permissaoValida === 'ARTHUR_SABOYA' ||
       permissaoValida === 'ADM_ARTHUR_SABOYA'
     ) {
       divisaoIdFinal = await this.obterDivisaoArthurSaboyaId();
     }
+    const dataAtualizacao: Prisma.UsuarioUncheckedUpdateInput = {
+      permissao: permissaoValida,
+      divisaoId: this.sanitizarDivisaoId(divisaoIdFinal),
+    };
+    if (nome !== undefined) dataAtualizacao.nome = nome;
+    if (nomeSocial !== undefined) {
+      dataAtualizacao.nomeSocial = nomeSocial.trim() || null;
+    }
+    if (login !== undefined) dataAtualizacao.login = login;
+    if (email !== undefined) dataAtualizacao.email = email;
+    if (status !== undefined) dataAtualizacao.status = status;
+    if (avatar !== undefined) dataAtualizacao.avatar = avatar?.trim() || null;
+
     await this.prisma.usuario.update({
-      data: {
-        ...rest,
-        permissao: permissaoValida,
-        divisaoId: divisaoIdFinal,
-      },
+      data: dataAtualizacao,
       where: { id },
     });
     return this.buscarPorId(id, usuarioLogado);
