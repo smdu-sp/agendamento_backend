@@ -29,7 +29,7 @@ import {
 export class UsuariosController {
   constructor(private readonly usuariosService: UsuariosService) {}
 
-  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
   @Post('criar')
   criar(
     @UsuarioAtual() usuario: Usuario,
@@ -38,7 +38,7 @@ export class UsuariosController {
     return this.usuariosService.criar(createUsuarioDto, usuario);
   }
 
-  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
   @Get('buscar-tudo')
   buscarTudo(
     @UsuarioAtual() usuario: Usuario,
@@ -58,7 +58,7 @@ export class UsuariosController {
     );
   }
 
-  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
   @Get('buscar-por-id/:id')
   buscarPorId(
     @UsuarioAtual() usuario: Usuario,
@@ -67,7 +67,7 @@ export class UsuariosController {
     return this.usuariosService.buscarPorId(id, usuario);
   }
 
-  @Permissoes('ADM', 'DEV', 'TEC', 'PONTO_FOCAL', 'COORDENADOR')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV', 'TEC', 'PONTO_FOCAL', 'COORDENADOR')
   @Patch('atualizar/:id')
   atualizar(
     @UsuarioAtual() usuario: Usuario,
@@ -77,7 +77,7 @@ export class UsuariosController {
     return this.usuariosService.atualizar(usuario, id, updateUsuarioDto);
   }
 
-  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
   @Get('lista-completa')
   listaCompleta(
     @UsuarioAtual() usuario?: Usuario,
@@ -85,13 +85,13 @@ export class UsuariosController {
     return this.usuariosService.listaCompleta(usuario);
   }
 
-  @Permissoes('ADM', 'DEV')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV')
   @Get('buscar-tecnicos')
   buscarTecnicos(): Promise<{ id: string; nome: string }[]> {
     return this.usuariosService.buscarTecnicos();
   }
 
-  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
   @Get('buscar-tecnicos-por-coordenadoria/:coordenadoriaId')
   buscarTecnicosPorCoordenadoria(
     @Param('coordenadoriaId') coordenadoriaId: string,
@@ -99,7 +99,7 @@ export class UsuariosController {
     return this.usuariosService.buscarTecnicosPorCoordenadoria(coordenadoriaId);
   }
 
-  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
   @Get('buscar-tecnicos-por-divisao/:divisaoId')
   buscarTecnicosPorDivisao(
     @Param('divisaoId') divisaoId: string,
@@ -108,7 +108,7 @@ export class UsuariosController {
     return this.usuariosService.buscarTecnicosPorDivisao(divisaoId, usuario);
   }
 
-  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR', 'ARTHUR_SABOYA')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV', 'PONTO_FOCAL', 'COORDENADOR', 'ARTHUR_SABOYA')
   @Get('buscar-tecnicos-arthur-saboya')
   buscarTecnicosArthurSaboya(
     @UsuarioAtual() usuario?: Usuario,
@@ -116,7 +116,7 @@ export class UsuariosController {
     return this.usuariosService.buscarTecnicosArthurSaboya(usuario);
   }
 
-  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
   @Delete('desativar/:id')
   excluir(
     @UsuarioAtual() usuario: Usuario,
@@ -125,7 +125,7 @@ export class UsuariosController {
     return this.usuariosService.excluir(id, usuario);
   }
 
-  @Permissoes('ADM', 'DEV')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV')
   @Patch('autorizar/:id')
   autorizarUsuario(
     @Param('id') id: string,
@@ -138,7 +138,7 @@ export class UsuariosController {
     return this.usuariosService.validaUsuario(usuario.id);
   }
 
-  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
   @Get('buscar-novo/:login')
   buscarNovo(@Param('login') login: string): Promise<BuscarNovoResponseDTO> {
     return this.usuariosService.buscarNovo(login);

@@ -29,6 +29,7 @@ import {
 } from './constants/pre-projetos-form';
 import {
   isAdmArthurSaboya,
+  isAdministradorSistema,
   isTecnicoArthurSaboya,
   podeConcluirChamadoArthurSaboya,
   podeSerTecnicoAtendimentoArthurSaboya,
@@ -1071,10 +1072,9 @@ export class AgendamentosService {
     }
     const podeComoStaffInterno =
       usuario.permissao === 'DEV' ||
-      usuario.permissao === 'ADM' ||
-      isAdmArthurSaboya(usuario.permissao) ||
+      isAdministradorSistema(usuario.permissao) ||
       permReal === 'DEV' ||
-      permReal === 'ADM';
+      isAdministradorSistema(permReal);
     const podeComoTecnicoSala =
       (usuario.permissao === 'TEC' || isTecnicoArthurSaboya(usuario.permissao)) &&
       !!divUser &&
@@ -1225,9 +1225,9 @@ export class AgendamentosService {
         | string
         | undefined;
       const isAdmOuDevRealOuEfetivo =
-        perm === 'ADM' ||
+        isAdministradorSistema(perm) ||
         perm === 'DEV' ||
-        permReal === 'ADM' ||
+        isAdministradorSistema(permReal) ||
         permReal === 'DEV';
       if (perm === 'PONTO_FOCAL') {
         const divId = (usuarioLogado as any).divisaoId as string | undefined;
@@ -1308,7 +1308,8 @@ export class AgendamentosService {
 
     const divUser = (usuarioLogado as any).divisaoId as string | undefined;
     const isDevRealOuEfetivo = perm === 'DEV' || permReal === 'DEV';
-    const isAdmRealOuEfetivo = perm === 'ADM' || permReal === 'ADM';
+    const isAdmRealOuEfetivo =
+      isAdministradorSistema(perm) || isAdministradorSistema(permReal);
     const isAdmSalaArthur =
       isAdmRealOuEfetivo &&
       !!divSala &&
@@ -1670,7 +1671,8 @@ export class AgendamentosService {
     const divSala = this.divisaoPreProjetosEnv();
     const divUser = (usuario as any).divisaoId as string | undefined;
     const isDevRealOuEfetivo = perm === 'DEV' || permReal === 'DEV';
-    const isAdmRealOuEfetivo = perm === 'ADM' || permReal === 'ADM';
+    const isAdmRealOuEfetivo =
+      isAdministradorSistema(perm) || isAdministradorSistema(permReal);
     const isAdmSalaArthur =
       isAdmRealOuEfetivo &&
       !!divSala &&
@@ -2225,6 +2227,10 @@ export class AgendamentosService {
       | ReturnType<AgendamentosService['escopoListaAgendamentosParaTec']>
       | undefined;
     if (usuarioLogado) {
+      // Administrador Arthur Saboya: sem acesso à lista de agendamentos normais
+      if (isAdmArthurSaboya(usuarioLogado.permissao)) {
+        return { total: 0, pagina: 0, limite: 0, data: [] };
+      }
       if (usuarioLogado.permissao === 'PONTO_FOCAL') {
         // Ponto Focal: técnico da sua divisão OU solicitação sem técnico da mesma coordenadoria
         const divisaoIdLogado = (usuarioLogado as any).divisaoId;
@@ -2508,6 +2514,9 @@ export class AgendamentosService {
       | undefined;
 
     if (usuarioLogado) {
+      if (isAdmArthurSaboya(usuarioLogado.permissao)) {
+        return [];
+      }
       if (usuarioLogado.permissao === 'PONTO_FOCAL') {
         const divisaoIdLogado = (usuarioLogado as any).divisaoId;
         if (divisaoIdLogado) filtroDivisaoTecnicoDia = divisaoIdLogado;
@@ -3996,6 +4005,11 @@ export class AgendamentosService {
     let dashboardDevTecSemDivisao = false;
 
     if (usuarioLogado) {
+      if (isAdmArthurSaboya(usuarioLogado.permissao)) {
+        throw new ForbiddenException(
+          'Perfil Administrador Arthur Saboya não acessa o dashboard de agendamentos gerais. Use o Dashboard Arthur Saboya.',
+        );
+      }
       if (usuarioLogado.permissao === 'PONTO_FOCAL') {
         filtroDivisaoTecnico = (usuarioLogado as any).divisaoId ?? undefined;
         filtroPFCoordDashboard =
@@ -4409,7 +4423,8 @@ export class AgendamentosService {
     const perm = usuario.permissao;
     const permReal = (usuario as any).permissaoReal as string | undefined;
     const isDevRealOuEfetivo = perm === 'DEV' || permReal === 'DEV';
-    const isAdmRealOuEfetivo = perm === 'ADM' || permReal === 'ADM';
+    const isAdmRealOuEfetivo =
+      isAdministradorSistema(perm) || isAdministradorSistema(permReal);
     const divSala = this.divisaoPreProjetosEnv();
     const divUser = (usuario as any).divisaoId as string | undefined;
 

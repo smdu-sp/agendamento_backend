@@ -24,13 +24,13 @@ import {
 export class MotivosController {
   constructor(private readonly motivosService: MotivosService) {}
 
-  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
   @Post('criar')
   criar(@Body() createMotivoDto: CreateMotivoDto): Promise<MotivoResponseDTO> {
     return this.motivosService.criar(createMotivoDto);
   }
 
-  @Permissoes('ADM', 'DEV')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV')
   @Get('buscar-tudo')
   buscarTudo(
     @Query('pagina') pagina?: string,
@@ -41,7 +41,7 @@ export class MotivosController {
     return this.motivosService.buscarTudo(+pagina, +limite, busca, status);
   }
 
-  @Permissoes('ADM', 'DEV')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV')
   @Get('buscar-por-id/:id')
   buscarPorId(@Param('id') id: string): Promise<MotivoResponseDTO> {
     return this.motivosService.buscarPorId(id);
@@ -52,7 +52,7 @@ export class MotivosController {
     return this.motivosService.listaCompleta();
   }
 
-  @Permissoes('ADM', 'DEV')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV')
   @Patch('atualizar/:id')
   atualizar(
     @Param('id') id: string,
@@ -61,7 +61,7 @@ export class MotivosController {
     return this.motivosService.atualizar(id, updateMotivoDto);
   }
 
-  @Permissoes('ADM', 'DEV')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV')
   @Delete('desativar/:id')
   excluir(@Param('id') id: string): Promise<{ desativado: boolean }> {
     return this.motivosService.excluir(id);

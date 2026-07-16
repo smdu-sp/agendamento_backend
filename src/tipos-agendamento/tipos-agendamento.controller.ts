@@ -15,13 +15,13 @@ import {
 export class TiposAgendamentoController {
   constructor(private readonly service: TiposAgendamentoService) {}
 
-  @Permissoes('ADM', 'DEV')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV')
   @Post('criar')
   criar(@Body() dto: CreateTipoAgendamentoDto): Promise<TipoAgendamentoResponseDTO> {
     return this.service.criar(dto);
   }
 
-  @Permissoes('ADM', 'DEV')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV')
   @Get('buscar-tudo')
   buscarTudo(
     @Query('pagina') pagina?: string,
@@ -32,7 +32,7 @@ export class TiposAgendamentoController {
     return this.service.buscarTudo(+pagina || 1, +limite || 10, busca, status);
   }
 
-  @Permissoes('ADM', 'DEV')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV')
   @Get('buscar-por-id/:id')
   buscarPorId(@Param('id') id: string): Promise<TipoAgendamentoResponseDTO> {
     return this.service.buscarPorId(id);
@@ -43,7 +43,7 @@ export class TiposAgendamentoController {
     return this.service.listaCompleta();
   }
 
-  @Permissoes('ADM', 'DEV')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV')
   @Patch('atualizar/:id')
   atualizar(
     @Param('id') id: string,
@@ -52,7 +52,7 @@ export class TiposAgendamentoController {
     return this.service.atualizar(id, dto);
   }
 
-  @Permissoes('ADM', 'DEV')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV')
   @Delete('desativar/:id')
   excluir(@Param('id') id: string): Promise<{ desativado: boolean }> {
     return this.service.excluir(id);

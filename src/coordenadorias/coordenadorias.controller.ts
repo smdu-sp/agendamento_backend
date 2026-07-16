@@ -26,7 +26,7 @@ import {
 export class CoordenadoriasController {
   constructor(private readonly coordenadoriasService: CoordenadoriasService) {}
 
-  @Permissoes('ADM', 'DEV')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV')
   @Post('criar')
   criar(
     @Body() createCoordenadoriaDto: CreateCoordenadoriaDto,
@@ -34,7 +34,7 @@ export class CoordenadoriasController {
     return this.coordenadoriasService.criar(createCoordenadoriaDto);
   }
 
-  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
   @Get('buscar-tudo')
   buscarTudo(
     @Query('pagina') pagina?: string,
@@ -52,7 +52,7 @@ export class CoordenadoriasController {
     );
   }
 
-  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
   @Get('buscar-por-id/:id')
   buscarPorId(
     @Param('id') id: string,
@@ -66,7 +66,7 @@ export class CoordenadoriasController {
     return this.coordenadoriasService.listaCompleta();
   }
 
-  @Permissoes('ADM', 'DEV')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV')
   @Patch('atualizar/:id')
   atualizar(
     @Param('id') id: string,
@@ -80,7 +80,7 @@ export class CoordenadoriasController {
     );
   }
 
-  @Permissoes('ADM', 'DEV')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV')
   @Delete('desativar/:id')
   excluir(@Param('id') id: string): Promise<{ desativado: boolean }> {
     return this.coordenadoriasService.excluir(id);

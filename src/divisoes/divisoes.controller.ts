@@ -24,13 +24,13 @@ import {
 export class DivisoesController {
   constructor(private readonly divisoesService: DivisoesService) {}
 
-  @Permissoes('ADM', 'DEV')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV')
   @Post('criar')
   criar(@Body() dto: CreateDivisaoDto): Promise<DivisaoResponseDTO> {
     return this.divisoesService.criar(dto);
   }
 
-  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
   @Get('buscar-tudo')
   buscarTudo(
     @Query('pagina') pagina?: string,
@@ -48,7 +48,7 @@ export class DivisoesController {
     );
   }
 
-  @Permissoes('ADM', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV', 'PONTO_FOCAL', 'COORDENADOR')
   @Get('buscar-por-id/:id')
   buscarPorId(@Param('id') id: string): Promise<DivisaoResponseDTO> {
     return this.divisoesService.buscarPorId(id);
@@ -61,7 +61,7 @@ export class DivisoesController {
     return this.divisoesService.listaCompleta(coordenadoriaId);
   }
 
-  @Permissoes('ADM', 'DEV')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV')
   @Patch('atualizar/:id')
   atualizar(
     @Param('id') id: string,
@@ -70,7 +70,7 @@ export class DivisoesController {
     return this.divisoesService.atualizar(id, dto);
   }
 
-  @Permissoes('ADM', 'DEV')
+  @Permissoes('ADM', 'ADM_ARTHUR_SABOYA', 'DEV')
   @Delete('desativar/:id')
   excluir(@Param('id') id: string): Promise<{ desativado: boolean }> {
     return this.divisoesService.excluir(id);

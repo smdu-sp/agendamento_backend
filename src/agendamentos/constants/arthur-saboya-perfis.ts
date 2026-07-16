@@ -1,4 +1,4 @@
-/** Perfis da Sala Arthur Saboya (técnico e administrador local). */
+/** Perfis da Sala Arthur Saboya (técnico e administrador com escopo da sala). */
 
 export const PERMISSOES_TECNICO_ARTHUR_SABOYA = [
   'ARTHUR_SABOYA',
@@ -15,8 +15,21 @@ export function isTecnicoArthurSaboya(permissao: string | undefined | null): boo
   );
 }
 
+/** Administrador Arthur Saboya: painel admin + técnico da sala; sem agendamentos normais. */
 export function isAdmArthurSaboya(permissao: string | undefined | null): boolean {
   return permissao === 'ADM_ARTHUR_SABOYA';
+}
+
+/** Apenas ADM global (não inclui Administrador Arthur Saboya). */
+export function isAdmGlobal(permissao: string | undefined | null): boolean {
+  return permissao === 'ADM';
+}
+
+/** ADM global ou Administrador Arthur Saboya (menus/APIs administrativas). */
+export function isAdministradorSistema(
+  permissao: string | undefined | null,
+): boolean {
+  return isAdmGlobal(permissao) || isAdmArthurSaboya(permissao);
 }
 
 /** Pode concluir chamados e operar como staff da sala (exceto DEV global). */
