@@ -100,6 +100,32 @@ export class UsuariosService {
     return match?.id;
   }
 
+  private mapearErroPersistenciaUsuario(error: unknown): never {
+    const mensagem = String(
+      error && typeof error === 'object' && 'message' in error
+        ? (error as { message?: unknown }).message
+        : error,
+    );
+    if (
+      mensagem.includes('ADM_ARTHUR_SABOYA') ||
+      mensagem.includes("Data truncated for column 'permissao'") ||
+      /permissao.*enum/i.test(mensagem)
+    ) {
+      throw new BadRequestException(
+        'O banco ainda não aceita a permissão Administrador Arthur Saboya. Aplique a migration do enum Permissao (ADM_ARTHUR_SABOYA).',
+      );
+    }
+    if (
+      (error as { code?: string })?.code === 'P2003' ||
+      mensagem.includes('Foreign key constraint')
+    ) {
+      throw new BadRequestException(
+        'Divisão inválida ou inexistente para o usuário.',
+      );
+    }
+    throw error;
+  }
+
   private async obterDivisaoArthurSaboyaId(): Promise<string> {
     const divisaoIdEnv = process.env.DIVISAO_ID_PRE_PROJETOS?.trim();
     if (divisaoIdEnv) {
@@ -390,7 +416,7 @@ export class UsuariosService {
         permissao,
         divisaoId: this.sanitizarDivisaoId(divisaoId) ?? undefined,
       },
-    });
+    }).catch((error) => this.mapearErroPersistenciaUsuario(error));
     if (!usuario)
       throw new InternalServerErrorException(
         'Não foi possível criar o usuário, tente novamente.',
@@ -600,10 +626,12 @@ export class UsuariosService {
     if (status !== undefined) dataAtualizacao.status = status;
     if (avatar !== undefined) dataAtualizacao.avatar = avatar?.trim() || null;
 
-    await this.prisma.usuario.update({
-      data: dataAtualizacao,
-      where: { id },
-    });
+    await this.prisma.usuario
+      .update({
+        data: dataAtualizacao,
+        where: { id },
+      })
+      .catch((error) => this.mapearErroPersistenciaUsuario(error));
     return this.buscarPorId(id, usuarioLogado);
   }
 

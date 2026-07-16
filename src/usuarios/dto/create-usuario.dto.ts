@@ -33,6 +33,7 @@ export class CreateUsuarioDto {
   email: string;
 
   @ApiProperty({ description: 'Enums do tipo:', enum: $Enums.Permissao })
+  @IsOptional()
   @IsEnum($Enums.Permissao, { message: 'Escolha uma permissão válida.' })
   permissao?: $Enums.Permissao;
 
