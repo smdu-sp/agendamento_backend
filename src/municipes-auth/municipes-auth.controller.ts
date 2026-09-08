@@ -1,6 +1,8 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { ApiBody, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { IsPublic } from 'src/auth/decorators/is-public.decorator';
+import { TurnstileGuard } from 'src/turnstile/guards/turnstile.guard';
 import { CadastroMunicipeDto } from './dto/cadastro-municipe.dto';
 import { LoginMunicipeDto } from './dto/login-municipe.dto';
 import { SolicitarRedefinicaoSenhaDto } from './dto/solicitar-redefinicao-senha.dto';
@@ -18,6 +20,8 @@ export class MunicipesAuthController {
 
   @Post('cadastro')
   @IsPublic()
+  @UseGuards(TurnstileGuard)
+  @Throttle({ default: { limit: 5, ttl: 3_600_000 } })
   @ApiBody({ type: CadastroMunicipeDto })
   cadastro(@Body() dto: CadastroMunicipeDto): Promise<MunicipeTokenResponseDto> {
     return this.service.cadastrar(dto);
@@ -25,6 +29,7 @@ export class MunicipesAuthController {
 
   @Post('login')
   @IsPublic()
+  @Throttle({ default: { limit: 10, ttl: 300_000 } })
   @ApiBody({ type: LoginMunicipeDto })
   login(@Body() dto: LoginMunicipeDto): Promise<MunicipeTokenResponseDto> {
     return this.service.login(dto);
@@ -32,6 +37,8 @@ export class MunicipesAuthController {
 
   @Post('solicitar-redefinicao-senha')
   @IsPublic()
+  @UseGuards(TurnstileGuard)
+  @Throttle({ default: { limit: 5, ttl: 3_600_000 } })
   @ApiBody({ type: SolicitarRedefinicaoSenhaDto })
   solicitarRedefinicaoSenha(
     @Body() dto: SolicitarRedefinicaoSenhaDto,
@@ -41,6 +48,7 @@ export class MunicipesAuthController {
 
   @Post('redefinir-senha')
   @IsPublic()
+  @Throttle({ default: { limit: 10, ttl: 1_800_000 } })
   @ApiBody({ type: RedefinirSenhaDto })
   redefinirSenha(@Body() dto: RedefinirSenhaDto): Promise<{ mensagem: string }> {
     return this.service.redefinirSenha(dto);

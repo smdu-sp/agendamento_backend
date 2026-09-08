@@ -27,6 +27,7 @@ import { LoginDto } from './models/login.dto';
 import { EuResponseDTO } from './models/eu-response.dto';
 import { UsuariosService } from 'src/usuarios/usuarios.service';
 import { UsuarioResponseDTO } from 'src/usuarios/dto/usuario-response.dto';
+import { Throttle } from '@nestjs/throttler';
 
 @ApiBearerAuth()
 @ApiTags('Auth')
@@ -45,6 +46,7 @@ export class AuthController {
   })
   @UseGuards(LocalAuthGuard)
   @IsPublic()
+  @Throttle({ default: { limit: 10, ttl: 300_000 } })
   login(@Request() req: AuthRequest): Promise<UsuarioToken> {
     return this.authService.login(req.user);
   }
@@ -53,6 +55,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @IsPublic()
   @UseGuards(RefreshAuthGuard)
+  @Throttle({ default: { limit: 20, ttl: 300_000 } })
   refresh(@UsuarioAtual() usuario: Usuario): Promise<UsuarioToken> {
     return this.authService.refresh(usuario);
   }
@@ -68,7 +71,6 @@ export class AuthController {
   }
 
   @Get('debug/time')
-  @IsPublic()
   debugTime() {
     const now = new Date();
     return {

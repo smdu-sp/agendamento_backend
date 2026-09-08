@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsEmail,
   IsIn,
+  IsNotEmpty,
   IsOptional,
   IsString,
   MaxLength,
@@ -64,4 +65,9 @@ export class CreateAgendamentoPreProjetoDto {
   @MinLength(1)
   @MaxLength(20000)
   descricao: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  turnstileToken: string;
 }

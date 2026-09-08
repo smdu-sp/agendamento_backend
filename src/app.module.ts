@@ -9,6 +9,7 @@ import { AgendamentosModule } from './agendamentos/agendamentos.module';
 import { MotivosModule } from './motivos/motivos.module';
 import { TiposAgendamentoModule } from './tipos-agendamento/tipos-agendamento.module';
 import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { ImpersonationGuard } from './auth/guards/impersonation.guard';
 import { RoleGuard } from './auth/guards/role.guard';
@@ -18,7 +19,9 @@ import { EmailModule } from './email/email.module';
 @Global()
 @Module({
   exports: [AppService],
-  imports: [PrismaModule, AuthModule, UsuariosModule, CoordenadoriasModule, DivisoesModule, AgendamentosModule, MotivosModule, TiposAgendamentoModule, MunicipesAuthModule, EmailModule],
+  imports: [PrismaModule, AuthModule, UsuariosModule, CoordenadoriasModule, DivisoesModule, AgendamentosModule, MotivosModule, TiposAgendamentoModule, MunicipesAuthModule, EmailModule,
+    ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 60 }]),
+  ],
   providers: [AppService,
     {
       provide: APP_GUARD,
@@ -31,6 +34,10 @@ import { EmailModule } from './email/email.module';
     {
       provide: APP_GUARD,
       useClass: RoleGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
     },
   ],
 })

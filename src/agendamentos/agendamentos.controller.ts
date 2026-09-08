@@ -49,6 +49,8 @@ import {
 import { DashboardResponseDTO } from './dto/dashboard-response.dto';
 import { DashboardArthurSaboyaResponseDTO } from './dto/dashboard-arthur-saboya-response.dto';
 import * as XLSX from 'xlsx';
+import { Throttle } from '@nestjs/throttler';
+import { TurnstileGuard } from 'src/turnstile/guards/turnstile.guard';
 
 @ApiTags('Agendamentos')
 @ApiBearerAuth()
@@ -57,6 +59,8 @@ export class AgendamentosController {
   constructor(private readonly agendamentosService: AgendamentosService) {}
 
   @IsPublic()
+  @UseGuards(TurnstileGuard)
+  @Throttle({ default: { limit: 5, ttl: 3_600_000 } })
   @Post('publico/pre-projetos')
   @ApiOperation({
     summary:

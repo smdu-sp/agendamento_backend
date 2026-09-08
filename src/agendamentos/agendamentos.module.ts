@@ -7,6 +7,7 @@ import { UsuariosModule } from 'src/usuarios/usuarios.module';
 import { CoordenadoriasModule } from 'src/coordenadorias/coordenadorias.module';
 import { MunicipeJwtAuthGuard } from 'src/auth/guards/municipe-jwt-auth.guard';
 import { EmailModule } from 'src/email/email.module';
+import { TurnstileModule } from 'src/turnstile/turnstile.module';
 import { PreProjetoChatGateway } from './pre-projeto-chat.gateway';
 
 @Module({
@@ -18,6 +19,7 @@ import { PreProjetoChatGateway } from './pre-projeto-chat.gateway';
     UsuariosModule,
     CoordenadoriasModule,
     EmailModule,
+    TurnstileModule,
   ],
   controllers: [AgendamentosController],
   providers: [AgendamentosService, MunicipeJwtAuthGuard, PreProjetoChatGateway],

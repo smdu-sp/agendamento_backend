@@ -1,4 +1,5 @@
-import 'dotenv/config';
+import { config } from 'dotenv';
+config({ path: ['.env.local', '.env'] });
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { stringify } from 'json-bigint';
@@ -23,14 +24,16 @@ async function bootstrap() {
     ? corsEnv.split(',').map((o) => o.trim())
     : ['http://localhost:3001', 'http://localhost:3000'];
   app.enableCors({ origin: corsOrigin });
-  const options = new DocumentBuilder()
-    .addBearerAuth()
-    .setTitle('Atendimento ao Público - Agendamentos')
-    .setDescription('Backend em NestJS para aplicação de agendamento de Atendimentos ao Público.',)
-    .setVersion('versão 1.0')
-    .build();
-  const document = SwaggerModule.createDocument(app, options);
-  SwaggerModule.setup('', app, document);
+  if (process.env.ENVIRONMENT === 'local') {
+    const options = new DocumentBuilder()
+      .addBearerAuth()
+      .setTitle('Atendimento ao Público - Agendamentos')
+      .setDescription('Backend em NestJS para aplicação de agendamento de Atendimentos ao Público.',)
+      .setVersion('versão 1.0')
+      .build();
+    const document = SwaggerModule.createDocument(app, options);
+    SwaggerModule.setup('', app, document);
+  }
   await app.listen(port);
   console.log("API outorga rodando em http://localhost:" + port);
   console.log("SwaggerUI rodando em http://localhost:" + port + "/api");

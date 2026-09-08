@@ -15,4 +15,9 @@ export class CadastroMunicipeDto {
   @IsString()
   @MinLength(6)
   senha: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  turnstileToken: string;
 }

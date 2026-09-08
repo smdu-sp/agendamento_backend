@@ -1,5 +1,6 @@
 export type EventoEmailTipo =
   | 'cadastro'
+  | 'cadastro-duplicado'
   | 'novo-chamado'
   | 'nova-mensagem'
   | 'agendamento-confirmado'
@@ -10,6 +11,7 @@ export type EventoEmailTipo =
 
 const CORES_EVENTO: Record<EventoEmailTipo, string> = {
   'cadastro': '#16A34A',
+  'cadastro-duplicado': '#4B5563',
   'novo-chamado': '#0A3299',
   'nova-mensagem': '#D97706',
   'agendamento-confirmado': '#EA580C',

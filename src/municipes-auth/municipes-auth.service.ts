@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -41,17 +40,26 @@ export class MunicipesAuthService {
     );
   }
 
-  async cadastrar(dto: CadastroMunicipeDto): Promise<{ access_token: string; emailEnviado: boolean }> {
+  async cadastrar(dto: CadastroMunicipeDto): Promise<{ access_token: string | null; emailEnviado: boolean }> {
     const email = dto.email.trim().toLowerCase();
     const nome = dto.nome.trim();
     if (!nome) throw new BadRequestException('Nome é obrigatório.');
 
     const existente = await this.prisma.municipeConta.findUnique({
       where: { email },
-      select: { id: true },
+      select: { id: true, nome: true, email: true },
     });
     if (existente) {
-      throw new ForbiddenException('Já existe conta para este e-mail.');
+      // Não revela ao chamador que a conta já existe (evita enumeração de
+      // e-mails) — em vez de retornar um erro distinto, notifica o dono da
+      // conta e devolve a mesma forma de resposta de um cadastro bem-sucedido,
+      // porém sem access_token (emitir um token real aqui seria um bug de
+      // account takeover, não apenas uma questão de UX).
+      const emailEnviado = await this.emailService.enviarTentativaCadastroDuplicado(
+        existente.nome,
+        existente.email,
+      );
+      return { access_token: null, emailEnviado };
     }
 
     const senhaHash = await bcrypt.hash(dto.senha, 10);

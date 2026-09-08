@@ -176,6 +176,39 @@ export class EmailService {
     );
   }
 
+  async enviarTentativaCadastroDuplicado(
+    nome: string,
+    email: string,
+    enviarBcc = false,
+  ): Promise<boolean> {
+    const base = this.getFrontendBase();
+    const linkRecuperacao = `${base}/agendamento/portal/acesso`;
+
+    const html = buildEmailHtml({
+      evento: 'cadastro-duplicado',
+      titulo: 'Tentativa de cadastro com seu e-mail',
+      saudacao: `Olá, ${nome}.`,
+      paragrafos: [
+        'Alguém tentou criar uma nova conta no Portal de Agendamentos usando este e-mail, que já possui um cadastro.',
+        'Se foi você e esqueceu sua senha, use o botão abaixo para redefini-la.',
+        'Se não foi você, pode ignorar este e-mail com segurança — nenhuma alteração foi feita na sua conta.',
+      ],
+      botao: { texto: 'Acessar minha conta', url: linkRecuperacao },
+    });
+
+    return this.enviarComRetry(
+      {
+        from: this.getRemetente(),
+        to: email,
+        subject: 'Tentativa de cadastro — Portal de Agendamentos',
+        html,
+        text: `Olá, ${nome}. Alguém tentou se cadastrar com este e-mail, que já possui conta. Se foi você e esqueceu a senha, acesse: ${linkRecuperacao}`,
+        bcc: enviarBcc ? this.getBccEnv() : undefined,
+      },
+      `cadastro-duplicado:${email}`,
+    );
+  }
+
   async enviarNovoChamadoPreProjeto(params: {
     nome: string;
     email: string;
