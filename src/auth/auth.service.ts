@@ -5,7 +5,7 @@ import { UsuarioPayload } from './models/UsuarioPayload';
 import { JwtService } from '@nestjs/jwt';
 import { UsuarioToken } from './models/UsuarioToken';
 import { UsuarioJwt } from './models/UsuarioJwt';
-import { Client as LdapClient } from 'ldapts';
+import { LdapExternoService } from 'src/ldap-externo/ldap-externo.service';
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
@@ -13,6 +13,7 @@ export class AuthService {
   constructor(
     private readonly usuariosService: UsuariosService,
     private readonly jwtService: JwtService,
+    private readonly ldapExterno: LdapExternoService,
   ) {}
 
   async login(usuario: Usuario): Promise<UsuarioToken> {
@@ -69,20 +70,9 @@ export class AuthService {
     // Ambiente local: ignora LDAP
     if (process.env.ENVIRONMENT === 'local') return usuario;
 
-    // Autenticação LDAP
-    const client = new LdapClient({ url: process.env.LDAP_SERVER });
-    try {
-      await client.bind(`${login}${process.env.LDAP_DOMAIN}`, senha);
-      return usuario;
-    } catch {
-      throw new UnauthorizedException('Credenciais incorretas.');
-    } finally {
-      // Garante que o cliente LDAP seja fechado sempre
-      try {
-        await client.unbind();
-      } catch {
-        // Ignora erro ao fechar
-      }
-    }
+    // Autenticação via serviço LDAP externo
+    const autenticado = await this.ldapExterno.autenticar(login, senha);
+    if (!autenticado) throw new UnauthorizedException('Credenciais incorretas.');
+    return usuario;
   }
 }

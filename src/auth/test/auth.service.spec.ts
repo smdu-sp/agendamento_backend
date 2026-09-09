@@ -7,6 +7,7 @@ import { AuthService } from 'src/auth/auth.service';
 import { UsuariosService } from 'src/usuarios/usuarios.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { AppService } from 'src/app.service';
+import { LdapExternoService } from 'src/ldap-externo/ldap-externo.service';
 
 describe('AuthService Tests', () => {
   let service: AuthService;
@@ -14,6 +15,7 @@ describe('AuthService Tests', () => {
   let jwtService: JwtService;
   let prisma: PrismaService;
   let app: AppService;
+  let ldapExterno: LdapExternoService;
 
   const mockUsuario: Usuario = {
     id: '123e4567-e89b-12d3-a456-426614174000',
@@ -21,6 +23,8 @@ describe('AuthService Tests', () => {
     nomeSocial: 'luluzinha',
     login: 'teste.usuario',
     email: 'teste@example.com',
+    senha: null,
+    divisaoId: null,
     permissao: 'PORTARIA',
     status: true,
     avatar: 'http://avatar.com/teste',
@@ -80,6 +84,12 @@ describe('AuthService Tests', () => {
           },
         },
         {
+          provide: LdapExternoService,
+          useValue: {
+            autenticar: jest.fn().mockResolvedValue(true),
+          },
+        },
+        {
           provide: JwtService,
           useValue: {
             signAsync: jest
@@ -100,6 +110,7 @@ describe('AuthService Tests', () => {
     jwtService = module.get<JwtService>(JwtService);
     prisma = module.get<PrismaService>(PrismaService);
     app = module.get<AppService>(AppService);
+    ldapExterno = module.get<LdapExternoService>(LdapExternoService);
   });
 
   it('os serviços deverão ser definidos', () => {
@@ -108,6 +119,7 @@ describe('AuthService Tests', () => {
     expect(jwtService).toBeDefined();
     expect(prisma).toBeDefined();
     expect(app).toBeDefined();
+    expect(ldapExterno).toBeDefined();
   });
 
   it('deverá retornar tokens e atualizar último login', async () => {
@@ -196,5 +208,37 @@ describe('AuthService Tests', () => {
     await expect(
       service.validateUser('invalid_login', 'any_password'),
     ).rejects.toThrow('Credenciais incorretas.');
+  });
+
+  it('deverá validar usuário via serviço LDAP externo em produção', async () => {
+    process.env.ENVIRONMENT = 'production';
+    (usuariosService.buscarPorLogin as jest.Mock).mockResolvedValue(
+      mockUsuario,
+    );
+    (ldapExterno.autenticar as jest.Mock).mockResolvedValue(true);
+
+    const result = await service.validateUser(mockUsuario.login, 'senha_correta');
+
+    expect(result).toEqual(mockUsuario);
+    expect(ldapExterno.autenticar).toHaveBeenCalledWith(
+      mockUsuario.login,
+      'senha_correta',
+    );
+
+    delete process.env.ENVIRONMENT;
+  });
+
+  it('deverá rejeitar quando o serviço LDAP externo recusa as credenciais', async () => {
+    process.env.ENVIRONMENT = 'production';
+    (usuariosService.buscarPorLogin as jest.Mock).mockResolvedValue(
+      mockUsuario,
+    );
+    (ldapExterno.autenticar as jest.Mock).mockResolvedValue(false);
+
+    await expect(
+      service.validateUser(mockUsuario.login, 'senha_errada'),
+    ).rejects.toThrow('Credenciais incorretas.');
+
+    delete process.env.ENVIRONMENT;
   });
 });

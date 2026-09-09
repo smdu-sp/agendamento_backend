@@ -8,12 +8,14 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { ValidarLoginMiddleware } from './middlewares/validar-login.middleware';
 import { RtStrategy } from './strategies/rt.strategy';
 import { UsuariosService } from 'src/usuarios/usuarios.service';
+import { LdapExternoModule } from 'src/ldap-externo/ldap-externo.module';
 
 @Module({
   controllers: [AuthController],
   providers: [AuthService, UsuariosService, LocalStrategy, JwtStrategy, RtStrategy],
   imports: [
     UsuariosModule,
+    LdapExternoModule,
     JwtModule.register({
       secret: process.env.JWT_SECRET,
       signOptions: {

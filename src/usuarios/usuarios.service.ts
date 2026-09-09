@@ -14,8 +14,8 @@ import { $Enums, Prisma, Usuario } from '@prisma/client';
 /** Contexto do usuário logado (sem senha) para autorização. */
 type UsuarioLogadoContext = Pick<Usuario, 'permissao' | 'divisaoId'>;
 import { AppService } from 'src/app.service';
-import { Client as LdapClient } from 'ldapts';
 import { SguService } from 'src/prisma/sgu.service';
+import { LdapExternoService } from 'src/ldap-externo/ldap-externo.service';
 import {
   BuscarNovoResponseDTO,
   UsuarioAutorizadoResponseDTO,
@@ -30,6 +30,7 @@ export class UsuariosService {
     private prisma: PrismaService,
     private app: AppService,
     private sgu: SguService,
+    private ldapExterno: LdapExternoService,
   ) {}
 
   private normalizarSigla(valor: string): string {
@@ -683,43 +684,6 @@ export class UsuariosService {
     return usuario as UsuarioResponseDTO;
   }
 
-  async buscarPorNome(
-    nome_busca: string,
-  ): Promise<{ nome: string; email: string; login: string }> {
-    const client: LdapClient = new LdapClient({
-      url: process.env.LDAP_SERVER,
-    });
-    try {
-      await client.bind(
-        `${process.env.USER_LDAP}${process.env.LDAP_DOMAIN}`,
-        process.env.PASS_LDAP,
-      );
-      const usuario = await client.search(
-        process.env.LDAP_BASE_DN || process.env.LDAP_BASE,
-        {
-          filter: `(&(name=${nome_busca})(company=SMUL))`,
-          scope: 'sub',
-          attributes: ['name', 'mail', 'sAMAccountName'],
-        },
-      );
-      const { name, mail, samaccountname } = usuario.searchEntries[0];
-      const nome = name.toString();
-      const email = mail.toString().toLowerCase();
-      const login = samaccountname.toString().toLowerCase();
-      return { nome, email, login };
-    } catch (error) {
-      throw new InternalServerErrorException(
-        'Não foi possível buscar o usuário.',
-      );
-    } finally {
-      try {
-        await client.unbind();
-      } catch {
-        // Ignora erro ao fechar
-      }
-    }
-  }
-
   async buscarNovo(login: string): Promise<BuscarNovoResponseDTO> {
     const usuarioExiste = await this.buscarPorLogin(login);
     if (usuarioExiste && usuarioExiste.status === true)
@@ -731,58 +695,17 @@ export class UsuariosService {
       });
       return usuarioReativado;
     }
-    const client: LdapClient = new LdapClient({
-      url: process.env.LDAP_SERVER,
-    });
 
-    const ldapBase = process.env.LDAP_BASE_DN || process.env.LDAP_BASE;
-    if (!ldapBase) {
-      throw new InternalServerErrorException(
-        'LDAP_BASE_DN não configurado no ambiente.',
-      );
+    const ldapUsuario = await this.ldapExterno.buscarPorLogin(login);
+    if (!ldapUsuario) {
+      throw new NotFoundException('Usuário não encontrado no LDAP.');
+    }
+    const { nome, email } = ldapUsuario;
+    if (!nome || !email) {
+      throw new NotFoundException('Dados do usuário incompletos no LDAP.');
     }
 
-    let nome: string, email: string;
-    try {
-      await client.bind(
-        `${process.env.USER_LDAP}${process.env.LDAP_DOMAIN}`,
-        process.env.PASS_LDAP,
-      );
-
-      const usuario = await client.search(ldapBase, {
-        filter: `(&(sAMAccountName=${login})(company=SMUL))`,
-        scope: 'sub',
-        attributes: ['name', 'mail', 'sAMAccountName'],
-      });
-
-      if (!usuario.searchEntries || usuario.searchEntries.length === 0) {
-        throw new NotFoundException('Usuário não encontrado no LDAP.');
-      }
-
-      const { name, mail } = usuario.searchEntries[0];
-      if (!name || !mail) {
-        throw new NotFoundException('Dados do usuário incompletos no LDAP.');
-      }
-
-      nome = name.toString();
-      email = mail.toString().toLowerCase();
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-      console.error('Erro ao buscar usuário no LDAP:', error);
-      throw new InternalServerErrorException(
-        'Não foi possível buscar o usuário no LDAP.',
-      );
-    } finally {
-      try {
-        await client.unbind();
-      } catch {
-        // Ignora erro ao fechar
-      }
-    }
-    if (!nome || !email) throw new NotFoundException('Usuário não encontrado.');
-    return { login, nome, email };
+    return { login, nome, email: email.toLowerCase() };
   }
 
   async atualizarUltimoLogin(id: string) {
