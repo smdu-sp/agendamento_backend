@@ -60,7 +60,7 @@ export class AgendamentosController {
 
   @IsPublic()
   @UseGuards(TurnstileGuard)
-  @Throttle({ default: { limit: 5, ttl: 3_600_000 } })
+  @Throttle({ default: { limit: 20, ttl: 3_600_000 } })
   @Post('publico/pre-projetos')
   @ApiOperation({
     summary:

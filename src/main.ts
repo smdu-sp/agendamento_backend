@@ -6,9 +6,15 @@ import { stringify } from 'json-bigint';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { json, urlencoded } from 'express';
 import { ValidationPipe } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  // Aplicação roda atrás de reverse proxy/load balancer em produção.
+  // Sem isso, req.ip resolve sempre para o IP do proxy, colapsando o
+  // rate limiting (ThrottlerGuard) num único balde compartilhado por
+  // todos os usuários. Ajuste o número de hops se a topologia mudar.
+  app.set('trust proxy', 1);
   app.useGlobalPipes(new ValidationPipe());
   app.use((req, res, next) => {
     res.json = (data) => {
