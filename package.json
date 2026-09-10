@@ -44,7 +44,6 @@
     "dotenv": "^17.4.2",
     "fs": "^0.0.1-security",
     "json-bigint": "^1.0.0",
-    "multer": "^1.4.5-lts.1",
     "npm-check-updates": "^17.1.15",
     "passport-jwt": "^4.0.1",
     "passport-local": "^1.0.0",
@@ -103,6 +102,9 @@
     "moduleNameMapper": {
       "^src/(.*)$": "<rootDir>/$1"
     }
+  },
+  "overrides": {
+    "multer": "^2.3.0"
   },
   "allowScripts": {
     "@prisma/client@5.12.1": true,
