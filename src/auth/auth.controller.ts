@@ -27,7 +27,7 @@ import { LoginDto } from './models/login.dto';
 import { EuResponseDTO } from './models/eu-response.dto';
 import { UsuariosService } from 'src/usuarios/usuarios.service';
 import { UsuarioResponseDTO } from 'src/usuarios/dto/usuario-response.dto';
-import { Throttle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 
 @ApiBearerAuth()
 @ApiTags('Auth')
@@ -70,6 +70,9 @@ export class AuthController {
     return this.usuariosService.buscarPorId(usuario.id);
   }
 
+  // Consultado periodicamente pelo DevClock do frontend: não deve consumir o
+  // orçamento de rate limit (por IP) do restante da aplicação.
+  @SkipThrottle()
   @Get('debug/time')
   debugTime() {
     const now = new Date();

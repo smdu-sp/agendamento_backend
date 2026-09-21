@@ -9,8 +9,9 @@ import { AgendamentosModule } from './agendamentos/agendamentos.module';
 import { MotivosModule } from './motivos/motivos.module';
 import { TiposAgendamentoModule } from './tipos-agendamento/tipos-agendamento.module';
 import { APP_GUARD } from '@nestjs/core';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
+import { UserThrottlerGuard } from './auth/guards/user-throttler.guard';
 import { ImpersonationGuard } from './auth/guards/impersonation.guard';
 import { RoleGuard } from './auth/guards/role.guard';
 import { MunicipesAuthModule } from './municipes-auth/municipes-auth.module';
@@ -37,7 +38,7 @@ import { EmailModule } from './email/email.module';
     },
     {
       provide: APP_GUARD,
-      useClass: ThrottlerGuard,
+      useClass: UserThrottlerGuard,
     },
   ],
 })
