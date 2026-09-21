@@ -682,10 +682,18 @@ export class AgendamentosController {
         nomesColunas.filter((c) => c !== ''),
       );
 
+      // Última linha realmente usada na planilha. NÃO usar um limite fixo (ex.: 1048576):
+      // o sheet_to_json percorre todo o range e gera uma linha vazia para cada uma,
+      // travando o event loop por vários segundos e estourando o timeout do proxy (502).
+      const refPlanilha = worksheet['!ref'];
+      const ultimaLinha = refPlanilha
+        ? XLSX.utils.decode_range(refPlanilha).e.r + 1
+        : linhaInicio;
+
       // Lê os dados como array de arrays começando da linha de cabeçalho
       // Isso evita o erro "invalid column -1" que acontece quando passamos array para header
       let dadosArray = XLSX.utils.sheet_to_json(worksheet, {
-        range: `A${linhaInicio}:Z1048576`, // Começa na linha de cabeçalho e lê até o limite da planilha
+        range: `A${linhaInicio}:Z${Math.max(ultimaLinha, linhaInicio)}`, // Da linha de cabeçalho até a última linha usada
         header: 1, // Retorna como array de arrays
         defval: null,
         raw: false,
