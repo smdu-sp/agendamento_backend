@@ -9,6 +9,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { CreateAgendamentoDto } from './dto/create-agendamento.dto';
+import type { ProgressoImportacao } from './importacao-jobs.service';
 import { CreateAgendamentoPreProjetoDto } from './dto/create-agendamento-pre-projeto.dto';
 import { UpdateAgendamentoDto } from './dto/update-agendamento.dto';
 import { PreProjetoSolicitacaoResponseDto } from './dto/pre-projeto-solicitacao-response.dto';
@@ -364,6 +365,90 @@ export class AgendamentosService {
       data: { texto: t, status: true },
     });
     return novo.id;
+  }
+
+  /**
+   * Cache por chave para as importações: o mesmo tipo/coordenadoria/técnico se repete
+   * em centenas de linhas e cada busca custa idas ao banco (e ao LDAP/SGU no caso do técnico).
+   * Falhas não ficam em cache, para que a próxima linha tente de novo.
+   */
+  private memoizar<T>(
+    cache: Map<string, Promise<T>>,
+    chave: string,
+    buscar: () => Promise<T>,
+  ): Promise<T> {
+    let promessa = cache.get(chave);
+    if (!promessa) {
+      promessa = buscar();
+      cache.set(chave, promessa);
+      promessa.catch(() => cache.delete(chave));
+    }
+    return promessa;
+  }
+
+  /**
+   * Busca a coordenadoria pela sigla e, se não existir, cadastra automaticamente.
+   * Retorna undefined se não foi possível resolver (erro é apenas logado).
+   */
+  private async buscarOuCriarCoordenadoriaPorSigla(
+    sigla: string,
+  ): Promise<string | undefined> {
+    try {
+      const encontrada = await this.coordenadoriasService.buscarPorSigla(sigla);
+      if (encontrada) return encontrada.id;
+      try {
+        const nova = await this.coordenadoriasService.criar({
+          sigla,
+          nome: sigla, // Usa a sigla como nome se não houver nome específico
+          status: true,
+        });
+        console.log(`Coordenadoria ${sigla} criada automaticamente`);
+        return nova.id;
+      } catch (criarError) {
+        // Se falhar ao criar (ex: sigla duplicada), tenta buscar novamente
+        const recriada = await this.coordenadoriasService.buscarPorSigla(sigla);
+        if (recriada) return recriada.id;
+        console.log(
+          `Erro ao criar coordenadoria ${sigla}:`,
+          criarError instanceof Error ? criarError.message : String(criarError),
+        );
+      }
+    } catch (error) {
+      console.log(
+        `Erro ao buscar coordenadoria ${sigla}:`,
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+    return undefined;
+  }
+
+  /**
+   * Chaves "processo|dataHora" dos agendamentos já existentes para os processos informados,
+   * numa consulta por lote (em vez de uma consulta por linha da planilha).
+   */
+  private async carregarChavesDuplicata(
+    processos: string[],
+  ): Promise<Set<string>> {
+    const chaves = new Set<string>();
+    const unicos = [...new Set(processos)];
+    const TAMANHO_LOTE = 1000;
+    for (let i = 0; i < unicos.length; i += TAMANHO_LOTE) {
+      const existentes = await this.prisma.agendamento.findMany({
+        where: { processo: { in: unicos.slice(i, i + TAMANHO_LOTE) } },
+        select: { processo: true, dataHora: true },
+      });
+      for (const e of existentes) {
+        if (e.processo) {
+          chaves.add(this.chaveDuplicata(e.processo, e.dataHora));
+        }
+      }
+    }
+    return chaves;
+  }
+
+  /** Minúsculas porque a collation do MySQL compara `processo` sem diferenciar caixa. */
+  private chaveDuplicata(processo: string, dataHora: Date): string {
+    return `${processo.trim().toLowerCase()}|${dataHora.getTime()}`;
   }
 
   /**
@@ -2908,11 +2993,27 @@ export class AgendamentosService {
     dadosPlanilha: any[],
     coordenadoriaId?: string,
     usuario?: Usuario,
+    onProgresso?: (p: ProgressoImportacao) => void,
   ): Promise<{ importados: number; erros: number; duplicados: number }> {
     let importados = 0;
     let erros = 0;
     let duplicados = 0;
     let linhasPuladas = 0; // Contador de linhas puladas sem erro
+    // Linhas já interpretadas (sem acesso ao banco); gravadas na fase 2.
+    const registros: {
+      index: number;
+      processo: string | null;
+      cpf: string | null;
+      municipe: string | null;
+      tipoAgendamento: string | null;
+      coordenadoriaSigla: string | null;
+      tecnicoNome: string | null;
+      tecnicoRF: string | null;
+      emailTecnico: string | null;
+      email: string | null;
+      dataHoraObj: Date;
+      dataFim: Date;
+    }[] = [];
 
     console.log(`📊 Total de linhas na planilha: ${dadosPlanilha.length}`);
 
@@ -2953,6 +3054,14 @@ export class AgendamentosService {
     }
 
     for (let index = 0; index < dadosPlanilha.length; index++) {
+      // Leitura vai de 0 a 10% do total. O yield deixa o backend responder às consultas de andamento.
+      if (index % 250 === 0) {
+        onProgresso?.({
+          percentual: (index / dadosPlanilha.length) * 10,
+          etapa: 'Lendo planilha',
+        });
+        await new Promise((resolve) => setImmediate(resolve));
+      }
       const linha = dadosPlanilha[index];
 
       // Pula linhas vazias ou com todos os valores null/undefined/vazios
@@ -3423,229 +3532,20 @@ export class AgendamentosService {
           erros++;
           continue;
         }
-        const dataFim = this.calcularDataFim(dataHoraObj, 60);
-
-        // Busca ou cria tipo de agendamento se necessário
-        let tipoAgendamentoId: string | undefined;
-        if (tipoAgendamento) {
-          try {
-            tipoAgendamentoId = await this.buscarOuCriarTipoPorTexto(
-              String(tipoAgendamento),
-            );
-          } catch (error) {
-            console.log(
-              `Erro ao criar/buscar tipo de agendamento: ${error instanceof Error ? error.message : String(error)}`,
-            );
-          }
-        }
-
-        // Busca coordenadoria pela sigla se fornecida, ou cria automaticamente se não existir
-        let coordenadoriaIdFinal = coordenadoriaId;
-        if (coordenadoriaSigla && !coordenadoriaIdFinal) {
-          try {
-            const coordenadoriaEncontrada =
-              await this.coordenadoriasService.buscarPorSigla(
-                String(coordenadoriaSigla).trim(),
-              );
-            if (coordenadoriaEncontrada) {
-              coordenadoriaIdFinal = coordenadoriaEncontrada.id;
-            } else {
-              // Coordenadoria não encontrada, cria automaticamente
-              try {
-                const novaCoordenadoria =
-                  await this.coordenadoriasService.criar({
-                    sigla: String(coordenadoriaSigla).trim(),
-                    nome: String(coordenadoriaSigla).trim(), // Usa a sigla como nome se não houver nome específico
-                    status: true,
-                  });
-                coordenadoriaIdFinal = novaCoordenadoria.id;
-                console.log(
-                  `Coordenadoria ${coordenadoriaSigla} criada automaticamente`,
-                );
-              } catch (criarError) {
-                // Se falhar ao criar (ex: sigla duplicada), tenta buscar novamente
-                const coordenadoriaRecriada =
-                  await this.coordenadoriasService.buscarPorSigla(
-                    String(coordenadoriaSigla).trim(),
-                  );
-                if (coordenadoriaRecriada) {
-                  coordenadoriaIdFinal = coordenadoriaRecriada.id;
-                } else {
-                  console.log(
-                    `Erro ao criar coordenadoria ${coordenadoriaSigla}:`,
-                    criarError instanceof Error
-                      ? criarError.message
-                      : String(criarError),
-                  );
-                }
-              }
-            }
-          } catch (error) {
-            console.log(
-              `Erro ao buscar coordenadoria ${coordenadoriaSigla}:`,
-              error instanceof Error ? error.message : String(error),
-            );
-          }
-        }
-
-        // Verifica se é "TÉCNICO RESERVA" ou busca/cria técnico por RF
-        let tecnicoId = null;
-        if (tecnicoNome) {
-          const tecnicoNomeStr = String(tecnicoNome).trim();
-          const tecnicoNomeUpper = tecnicoNomeStr.toUpperCase();
-
-          if (
-            tecnicoNomeUpper.includes('TÉCNICO RESERVA') ||
-            tecnicoNomeUpper.includes('TECNICO RESERVA')
-          ) {
-            // Extrai a sigla da coordenadoria do texto "TÉCNICO RESERVA GTEC"
-            const match = tecnicoNomeUpper.match(
-              /T[ÉE]CNICO\s+RESERVA\s+(\w+)/,
-            );
-            if (match && match[1] && !coordenadoriaIdFinal) {
-              const siglaCoordenadoria = match[1].trim();
-              try {
-                const coordenadoria =
-                  await this.coordenadoriasService.buscarPorSigla(
-                    siglaCoordenadoria,
-                  );
-                if (coordenadoria) {
-                  coordenadoriaIdFinal = coordenadoria.id;
-                } else {
-                  // Coordenadoria não encontrada, cria automaticamente
-                  try {
-                    const novaCoordenadoria =
-                      await this.coordenadoriasService.criar({
-                        sigla: siglaCoordenadoria,
-                        nome: siglaCoordenadoria, // Usa a sigla como nome se não houver nome específico
-                        status: true,
-                      });
-                    coordenadoriaIdFinal = novaCoordenadoria.id;
-                    console.log(
-                      `Coordenadoria ${siglaCoordenadoria} criada automaticamente para TÉCNICO RESERVA`,
-                    );
-                  } catch (criarError) {
-                    // Se falhar ao criar (ex: sigla duplicada), tenta buscar novamente
-                    const coordenadoriaRecriada =
-                      await this.coordenadoriasService.buscarPorSigla(
-                        siglaCoordenadoria,
-                      );
-                    if (coordenadoriaRecriada) {
-                      coordenadoriaIdFinal = coordenadoriaRecriada.id;
-                    } else {
-                      console.log(
-                        `Erro ao criar coordenadoria ${siglaCoordenadoria} para TÉCNICO RESERVA:`,
-                        criarError instanceof Error
-                          ? criarError.message
-                          : String(criarError),
-                      );
-                    }
-                  }
-                }
-              } catch (error) {
-                console.log(
-                  `Erro ao buscar coordenadoria ${siglaCoordenadoria} para TÉCNICO RESERVA:`,
-                  error instanceof Error ? error.message : String(error),
-                );
-              }
-            }
-            // Não atribui técnico - será atribuído manualmente pelo ponto focal
-            tecnicoId = null;
-          } else if (tecnicoRF) {
-            // Se tem RF, busca ou cria técnico normalmente com a coordenadoria e email da planilha
-            tecnicoId = await this.buscarOuCriarTecnicoPorRF(
-              String(tecnicoRF),
-              coordenadoriaIdFinal || undefined,
-              emailTecnico || undefined,
-            );
-          }
-        } else if (tecnicoRF) {
-          // Se não tem nome do técnico mas tem RF, busca ou cria técnico normalmente com a coordenadoria e email da planilha
-          tecnicoId = await this.buscarOuCriarTecnicoPorRF(
-            String(tecnicoRF),
-            coordenadoriaIdFinal || undefined,
-            emailTecnico || undefined,
-          );
-        }
-
-        // Validação final antes de criar
-        if (!dataHoraObj || isNaN(dataHoraObj.getTime())) {
-          console.log(
-            `Linha ${index + 1}: Data/Hora inválida antes de criar agendamento`,
-          );
-          erros++;
-          continue;
-        }
-
-        // Impede duplicata: mesmo processo + mesma data/hora
-        const processoTrim = processo ? String(processo).trim() : '';
-        if (processoTrim) {
-          const existente = await this.prisma.agendamento.findFirst({
-            where: {
-              processo: processoTrim,
-              dataHora: dataHoraObj,
-            },
-          });
-          if (existente) {
-            if (index < 5) {
-              console.log(
-                `Linha ${index + 1}: Duplicado (processo ${processoTrim} + data/hora já existente). Linha ignorada.`,
-              );
-            }
-            duplicados++;
-            continue;
-          }
-        }
-
-        try {
-          const processoImport = processo ? String(processo).trim() : '';
-          const divisaoIdImport = await this.divisaoIdDoTecnico(tecnicoId);
-          await this.prisma.agendamento.create({
-            data: {
-              municipe: municipe
-                ? this.padronizarNome(String(municipe).trim())
-                : null,
-              cpf: cpf ? String(cpf).trim() : null,
-              processo: processoImport || null,
-              dataHora: dataHoraObj,
-              dataFim,
-              resumo: tipoAgendamento ? String(tipoAgendamento).trim() : null,
-              tipoAgendamentoId,
-              coordenadoriaId: coordenadoriaIdFinal || null,
-              divisaoId: divisaoIdImport,
-              tecnicoId,
-              tecnicoRF: tecnicoRF ? String(tecnicoRF).trim() : null,
-              email: email || null,
-              importado: true,
-              // Importação: sempre SOLICITADO até confirmação explícita de agendado.
-              status: StatusAgendamento.SOLICITADO,
-            },
-          });
-
-          importados++;
-        } catch (dbError) {
-          // Erro específico do banco de dados
-          const errorMsg =
-            dbError instanceof Error ? dbError.message : String(dbError);
-          console.error(
-            `Linha ${index + 1}: Erro ao criar no banco de dados:`,
-            errorMsg,
-          );
-          if (dbError instanceof Error && dbError.stack) {
-            console.error(`Stack trace:`, dbError.stack);
-          }
-          console.error(`Dados que causaram o erro:`, {
-            processo,
-            cpf,
-            municipe,
-            tipoAgendamento,
-            coordenadoriaSigla,
-            tecnicoNome,
-            tecnicoRF,
-            dataHora: dataHoraObj,
-          });
-          erros++;
-        }
+        registros.push({
+          index,
+          processo,
+          cpf,
+          municipe,
+          tipoAgendamento,
+          coordenadoriaSigla,
+          tecnicoNome,
+          tecnicoRF,
+          emailTecnico,
+          email,
+          dataHoraObj,
+          dataFim: this.calcularDataFim(dataHoraObj, 60),
+        });
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : String(error);
@@ -3659,6 +3559,199 @@ export class AgendamentosService {
         erros++;
       }
     }
+
+    // Fase 2: resolve tipo/coordenadoria/técnico (com cache), descarta duplicatas com uma
+    // única consulta e grava em lote. Antes eram ~6 consultas sequenciais por linha.
+    const cacheTipos = new Map<string, Promise<string | undefined>>();
+    const cacheCoordenadorias = new Map<string, Promise<string | undefined>>();
+    const cacheTecnicos = new Map<
+      string,
+      Promise<{ tecnicoId: string | null; divisaoId: string | null }>
+    >();
+
+    onProgresso?.({ percentual: 10, etapa: 'Verificando duplicatas' });
+    const chavesExistentes = await this.carregarChavesDuplicata(
+      registros.map((r) => r.processo).filter((p): p is string => !!p),
+    );
+
+    const resolverCoordenadoria = (sigla: string) =>
+      this.memoizar(cacheCoordenadorias, sigla, () =>
+        this.buscarOuCriarCoordenadoriaPorSigla(sigla),
+      );
+
+    const paraCriar: {
+      index: number;
+      data: Prisma.AgendamentoUncheckedCreateInput;
+    }[] = [];
+
+    for (const [posicao, r] of registros.entries()) {
+      // Processamento vai de 10 a 70% do total.
+      if (posicao % 25 === 0) {
+        onProgresso?.({
+          percentual: 10 + (posicao / registros.length) * 60,
+          etapa: `Processando linhas (${posicao} de ${registros.length})`,
+        });
+      }
+      if (posicao % 250 === 0) await new Promise((resolve) => setImmediate(resolve));
+      try {
+        // Busca ou cria tipo de agendamento se necessário
+        let tipoAgendamentoId: string | undefined;
+        if (r.tipoAgendamento) {
+          const tipoTexto = String(r.tipoAgendamento);
+          try {
+            tipoAgendamentoId = await this.memoizar(cacheTipos, tipoTexto, () =>
+              this.buscarOuCriarTipoPorTexto(tipoTexto),
+            );
+          } catch (error) {
+            console.log(
+              `Erro ao criar/buscar tipo de agendamento: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+        }
+
+        // Busca coordenadoria pela sigla se fornecida, ou cria automaticamente se não existir
+        let coordenadoriaIdFinal = coordenadoriaId;
+        if (r.coordenadoriaSigla && !coordenadoriaIdFinal) {
+          coordenadoriaIdFinal = await resolverCoordenadoria(
+            String(r.coordenadoriaSigla).trim(),
+          );
+        }
+
+        // "TÉCNICO RESERVA <SIGLA>" não recebe técnico (atribuição manual pelo ponto focal);
+        // nos demais casos busca/cria o técnico por RF.
+        let tecnico: { tecnicoId: string | null; divisaoId: string | null } = {
+          tecnicoId: null,
+          divisaoId: null,
+        };
+        const tecnicoNomeUpper = r.tecnicoNome
+          ? String(r.tecnicoNome).trim().toUpperCase()
+          : '';
+        const ehTecnicoReserva =
+          tecnicoNomeUpper.includes('TÉCNICO RESERVA') ||
+          tecnicoNomeUpper.includes('TECNICO RESERVA');
+
+        if (ehTecnicoReserva) {
+          // Extrai a sigla da coordenadoria do texto "TÉCNICO RESERVA GTEC"
+          const match = tecnicoNomeUpper.match(/T[ÉE]CNICO\s+RESERVA\s+(\w+)/);
+          if (match && match[1] && !coordenadoriaIdFinal) {
+            coordenadoriaIdFinal =
+              (await resolverCoordenadoria(match[1].trim())) ??
+              coordenadoriaIdFinal;
+          }
+        } else if (r.tecnicoRF) {
+          const rf = String(r.tecnicoRF);
+          const coordParaTecnico = coordenadoriaIdFinal || undefined;
+          const emailParaTecnico = r.emailTecnico || undefined;
+          tecnico = await this.memoizar(
+            cacheTecnicos,
+            `${rf}|${coordParaTecnico ?? ''}|${emailParaTecnico ?? ''}`,
+            async () => {
+              const tecnicoId = await this.buscarOuCriarTecnicoPorRF(
+                rf,
+                coordParaTecnico,
+                emailParaTecnico,
+              );
+              return {
+                tecnicoId,
+                divisaoId: await this.divisaoIdDoTecnico(tecnicoId),
+              };
+            },
+          );
+        }
+
+        // Impede duplicata: mesmo processo + mesma data/hora (já no banco ou repetida na planilha)
+        const processoImport = r.processo ? String(r.processo).trim() : '';
+        if (processoImport) {
+          const chave = this.chaveDuplicata(processoImport, r.dataHoraObj);
+          if (chavesExistentes.has(chave)) {
+            if (r.index < 5) {
+              console.log(
+                `Linha ${r.index + 1}: Duplicado (processo ${processoImport} + data/hora já existente). Linha ignorada.`,
+              );
+            }
+            duplicados++;
+            continue;
+          }
+          chavesExistentes.add(chave);
+        }
+
+        paraCriar.push({
+          index: r.index,
+          data: {
+            municipe: r.municipe
+              ? this.padronizarNome(String(r.municipe).trim())
+              : null,
+            cpf: r.cpf ? String(r.cpf).trim() : null,
+            processo: processoImport || null,
+            dataHora: r.dataHoraObj,
+            dataFim: r.dataFim,
+            resumo: r.tipoAgendamento
+              ? String(r.tipoAgendamento).trim()
+              : null,
+            tipoAgendamentoId,
+            coordenadoriaId: coordenadoriaIdFinal || null,
+            divisaoId: tecnico.divisaoId,
+            tecnicoId: tecnico.tecnicoId,
+            tecnicoRF: r.tecnicoRF ? String(r.tecnicoRF).trim() : null,
+            email: r.email || null,
+            importado: true,
+            // Importação: sempre SOLICITADO até confirmação explícita de agendado.
+            status: StatusAgendamento.SOLICITADO,
+          },
+        });
+      } catch (error) {
+        console.error(
+          `Erro ao importar linha ${r.index + 1}:`,
+          error instanceof Error ? error.message : String(error),
+        );
+        console.error(
+          `Dados da linha que causou erro:`,
+          JSON.stringify({
+            processo: r.processo,
+            cpf: r.cpf,
+            municipe: r.municipe,
+            tecnicoRF: r.tecnicoRF,
+          }),
+        );
+        erros++;
+      }
+    }
+
+    // Grava em lotes. Se um lote falhar, regrava linha a linha para isolar (e contar) só
+    // as linhas com problema. O createMany é atômico por lote, então não há gravação parcial.
+    const TAMANHO_LOTE = 200;
+    for (let i = 0; i < paraCriar.length; i += TAMANHO_LOTE) {
+      // Gravação vai de 70 a 100% do total.
+      onProgresso?.({
+        percentual: 70 + (i / paraCriar.length) * 30,
+        etapa: `Gravando agendamentos (${i} de ${paraCriar.length})`,
+      });
+      const lote = paraCriar.slice(i, i + TAMANHO_LOTE);
+      try {
+        await this.prisma.agendamento.createMany({
+          data: lote.map((item) => item.data),
+        });
+        importados += lote.length;
+      } catch (loteError) {
+        console.error(
+          `Falha ao gravar lote de ${lote.length} agendamentos, regravando linha a linha:`,
+          loteError instanceof Error ? loteError.message : String(loteError),
+        );
+        for (const item of lote) {
+          try {
+            await this.prisma.agendamento.create({ data: item.data });
+            importados++;
+          } catch (dbError) {
+            console.error(
+              `Linha ${item.index + 1}: Erro ao criar no banco de dados:`,
+              dbError instanceof Error ? dbError.message : String(dbError),
+            );
+            erros++;
+          }
+        }
+      }
+    }
+
 
     console.log(`📊 Resumo da importação:`);
     console.log(`   Total de linhas na planilha: ${dadosPlanilha.length}`);
@@ -3723,6 +3816,7 @@ export class AgendamentosService {
     dadosPlanilha: any[],
     usuario?: Usuario,
     dataPlanilhaStr?: string,
+    onProgresso?: (p: ProgressoImportacao) => void,
   ): Promise<{ importados: number; erros: number; duplicados: number }> {
     let importados = 0;
     let erros = 0;
@@ -3741,7 +3835,15 @@ export class AgendamentosService {
       throw new Error('Dados da planilha Outlook inválidos');
     }
 
+    // Tipo e unidade se repetem entre as linhas: evita buscá-los no banco a cada uma.
+    const cacheTipos = new Map<string, Promise<string | undefined>>();
+    const cacheCoordenadorias = new Map<string, Promise<string | undefined>>();
+
     for (let index = 0; index < dadosPlanilha.length; index++) {
+      onProgresso?.({
+        percentual: (index / dadosPlanilha.length) * 100,
+        etapa: `Processando linhas (${index} de ${dadosPlanilha.length})`,
+      });
       const row = dadosPlanilha[index];
       if (!row || typeof row !== 'object') {
         erros++;
@@ -3782,27 +3884,33 @@ export class AgendamentosService {
         const tipoTexto = get('Tipo de Atendimento');
         let tipoAgendamentoId: string | undefined;
         if (tipoTexto) {
-          tipoAgendamentoId = await this.buscarOuCriarTipoPorTexto(tipoTexto);
+          tipoAgendamentoId = await this.memoizar(cacheTipos, tipoTexto, () =>
+            this.buscarOuCriarTipoPorTexto(tipoTexto),
+          );
         }
 
         const unidadeStr = get('Unidade');
         let coordenadoriaId: string | undefined;
         if (unidadeStr) {
-          const coordPorSigla = await this.coordenadoriasService.buscarPorSigla(unidadeStr);
-          if (coordPorSigla) {
-            coordenadoriaId = coordPorSigla.id;
-          } else {
-            const coordPorNome = await this.prisma.coordenadoria.findFirst({
-              where: {
-                OR: [
-                  { sigla: { contains: unidadeStr } },
-                  { nome: { contains: unidadeStr } },
-                ],
-                status: true,
-              },
-            });
-            if (coordPorNome) coordenadoriaId = coordPorNome.id;
-          }
+          coordenadoriaId = await this.memoizar(
+            cacheCoordenadorias,
+            unidadeStr,
+            async () => {
+              const coordPorSigla =
+                await this.coordenadoriasService.buscarPorSigla(unidadeStr);
+              if (coordPorSigla) return coordPorSigla.id;
+              const coordPorNome = await this.prisma.coordenadoria.findFirst({
+                where: {
+                  OR: [
+                    { sigla: { contains: unidadeStr } },
+                    { nome: { contains: unidadeStr } },
+                  ],
+                  status: true,
+                },
+              });
+              return coordPorNome?.id;
+            },
+          );
         }
 
         const dataHora = this.parseDataHoraOutlook(horarioRaw, dataPlanilhaStr);

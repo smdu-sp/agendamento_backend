@@ -15,9 +15,17 @@ import {
   ParseUUIDPipe,
   Headers,
   UseGuards,
+  HttpCode,
+  HttpStatus,
+  BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AgendamentosService } from './agendamentos.service';
+import {
+  ImportacaoJobsService,
+  type JobImportacao,
+  type ResultadoImportacao,
+} from './importacao-jobs.service';
 import { CreateAgendamentoDto } from './dto/create-agendamento.dto';
 import { CreateAgendamentoPreProjetoDto } from './dto/create-agendamento-pre-projeto.dto';
 import { UpdateAgendamentoDto } from './dto/update-agendamento.dto';
@@ -49,14 +57,29 @@ import {
 import { DashboardResponseDTO } from './dto/dashboard-response.dto';
 import { DashboardArthurSaboyaResponseDTO } from './dto/dashboard-arthur-saboya-response.dto';
 import * as XLSX from 'xlsx';
-import { Throttle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { TurnstileGuard } from 'src/turnstile/guards/turnstile.guard';
+
+/** Validação do upload de planilha Excel (.xlsx/.xls, até 10MB). */
+const pipeArquivoExcel = () =>
+  new ParseFilePipe({
+    validators: [
+      new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 }), // 10MB
+      new FileTypeValidator({
+        fileType:
+          /^(application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|application\/vnd\.ms-excel|application\/excel)$/,
+      }),
+    ],
+  });
 
 @ApiTags('Agendamentos')
 @ApiBearerAuth()
 @Controller('agendamentos')
 export class AgendamentosController {
-  constructor(private readonly agendamentosService: AgendamentosService) {}
+  constructor(
+    private readonly agendamentosService: AgendamentosService,
+    private readonly importacaoJobs: ImportacaoJobsService,
+  ) {}
 
   @IsPublic()
   @UseGuards(TurnstileGuard)
@@ -543,21 +566,84 @@ export class AgendamentosController {
   })
   @UseInterceptors(FileInterceptor('arquivo'))
   async importarPlanilha(
-    @UploadedFile(
-      new ParseFilePipe({
-        validators: [
-          new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 }), // 10MB
-          new FileTypeValidator({
-            fileType:
-              /^(application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|application\/vnd\.ms-excel|application\/excel)$/,
-          }),
-        ],
-      }),
-    )
-    arquivo: Express.Multer.File,
+    @UploadedFile(pipeArquivoExcel()) arquivo: Express.Multer.File,
     @Body() body: { coordenadoriaId?: string },
     @UsuarioAtual() usuario?: Usuario,
-  ): Promise<{ importados: number; erros: number; duplicados: number }> {
+  ): Promise<ResultadoImportacao> {
+    const dados = this.lerDadosPlanilha(arquivo);
+    if (dados.length === 0) return { importados: 0, erros: 0, duplicados: 0 };
+    return this.agendamentosService.importarPlanilha(
+      dados,
+      body?.coordenadoriaId,
+      usuario,
+    );
+  }
+
+  /**
+   * Versão assíncrona: lê e valida a planilha na requisição (erros voltam já aqui) e
+   * importa em segundo plano. Devolve o job; o andamento sai de GET importacoes/:id.
+   */
+  @Permissoes('ADM', 'DEV')
+  @Post('importar-planilha/iniciar')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        arquivo: {
+          type: 'string',
+          format: 'binary',
+        },
+        coordenadoriaId: {
+          type: 'string',
+        },
+      },
+    },
+  })
+  @UseInterceptors(FileInterceptor('arquivo'))
+  iniciarImportacaoPlanilha(
+    @UploadedFile(pipeArquivoExcel()) arquivo: Express.Multer.File,
+    @Body() body: { coordenadoriaId?: string },
+    @UsuarioAtual() usuario: Usuario,
+  ): JobImportacao {
+    const dados = this.lerDadosPlanilhaOu400(arquivo);
+    return this.importacaoJobs.iniciar('planilha', usuario.id, async (progresso) => {
+      if (dados.length === 0) return { importados: 0, erros: 0, duplicados: 0 };
+      return this.agendamentosService.importarPlanilha(
+        dados,
+        body?.coordenadoriaId,
+        usuario,
+        progresso,
+      );
+    });
+  }
+
+  /** Andamento de uma importação iniciada por importar-planilha(-outlook)/iniciar. */
+  @Permissoes('ADM', 'DEV')
+  @SkipThrottle() // a tela consulta a cada ~1s enquanto a importação roda
+  @Get('importacoes/:id')
+  statusImportacao(
+    @Param('id') id: string,
+    @UsuarioAtual() usuario: Usuario,
+  ): JobImportacao {
+    return this.importacaoJobs.obter(id, usuario.id);
+  }
+
+  private lerDadosPlanilhaOu400(arquivo: Express.Multer.File): any[] {
+    try {
+      return this.lerDadosPlanilha(arquivo);
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Não foi possível ler a planilha.',
+      );
+    }
+  }
+
+  /** Lê a planilha de agendamentos e devolve as linhas de dados (objetos por coluna). */
+  private lerDadosPlanilha(arquivo: Express.Multer.File): any[] {
     try {
       if (!arquivo) {
         throw new Error('Arquivo não fornecido');
@@ -836,15 +922,7 @@ export class AgendamentosController {
         );
       }
 
-      if (!dados || dados.length === 0) {
-        return { importados: 0, erros: 0, duplicados: 0 };
-      }
-
-      return this.agendamentosService.importarPlanilha(
-        dados,
-        body?.coordenadoriaId,
-        usuario,
-      );
+      return dados ?? [];
     } catch (error) {
       console.error('Erro ao importar planilha:', error);
       throw error;
@@ -867,20 +945,66 @@ export class AgendamentosController {
   })
   @UseInterceptors(FileInterceptor('arquivo'))
   async importarPlanilhaOutlook(
-    @UploadedFile(
-      new ParseFilePipe({
-        validators: [
-          new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 }),
-          new FileTypeValidator({
-            fileType:
-              /^(application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|application\/vnd\.ms-excel|application\/excel)$/,
-          }),
-        ],
-      }),
-    )
-    arquivo: Express.Multer.File,
+    @UploadedFile(pipeArquivoExcel()) arquivo: Express.Multer.File,
     @UsuarioAtual() usuario?: Usuario,
-  ): Promise<{ importados: number; erros: number; duplicados: number }> {
+  ): Promise<ResultadoImportacao> {
+    const { dados, dataPlanilhaStr } = this.lerDadosOutlook(arquivo);
+    if (dados.length === 0) return { importados: 0, erros: 0, duplicados: 0 };
+    return this.agendamentosService.importarPlanilhaOutlook(
+      dados,
+      usuario,
+      dataPlanilhaStr,
+    );
+  }
+
+  /** Versão assíncrona da importação Outlook (mesmo esquema de importar-planilha/iniciar). */
+  @Permissoes('ADM', 'DEV')
+  @Post('importar-planilha-outlook/iniciar')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        arquivo: {
+          type: 'string',
+          format: 'binary',
+        },
+      },
+    },
+  })
+  @UseInterceptors(FileInterceptor('arquivo'))
+  iniciarImportacaoPlanilhaOutlook(
+    @UploadedFile(pipeArquivoExcel()) arquivo: Express.Multer.File,
+    @UsuarioAtual() usuario: Usuario,
+  ): JobImportacao {
+    let leitura: { dados: any[]; dataPlanilhaStr?: string };
+    try {
+      leitura = this.lerDadosOutlook(arquivo);
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Não foi possível ler a planilha.',
+      );
+    }
+    const { dados, dataPlanilhaStr } = leitura;
+    return this.importacaoJobs.iniciar('outlook', usuario.id, async (progresso) => {
+      if (dados.length === 0) return { importados: 0, erros: 0, duplicados: 0 };
+      return this.agendamentosService.importarPlanilhaOutlook(
+        dados,
+        usuario,
+        dataPlanilhaStr,
+        progresso,
+      );
+    });
+  }
+
+  /** Lê a planilha do Outlook: linhas de dados + data do título ("Data: DD/MM/AAAA"). */
+  private lerDadosOutlook(arquivo: Express.Multer.File): {
+    dados: any[];
+    dataPlanilhaStr?: string;
+  } {
     if (!arquivo) throw new Error('Arquivo não fornecido');
     const workbook = XLSX.read(arquivo.buffer, { type: 'buffer' });
     if (!workbook.SheetNames?.length) throw new Error('Planilha vazia ou inválida');
@@ -917,13 +1041,6 @@ export class AgendamentosController {
       header: headerOutlook,
       defval: null,
     });
-    if (!dados || dados.length === 0) {
-      return { importados: 0, erros: 0, duplicados: 0 };
-    }
-    return this.agendamentosService.importarPlanilhaOutlook(
-      dados,
-      usuario,
-      dataPlanilhaStr ?? undefined,
-    );
+    return { dados: dados ?? [], dataPlanilhaStr: dataPlanilhaStr ?? undefined };
   }
 }

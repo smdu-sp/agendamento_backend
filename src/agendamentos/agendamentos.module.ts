@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { AgendamentosService } from './agendamentos.service';
 import { AgendamentosController } from './agendamentos.controller';
+import { ImportacaoJobsService } from './importacao-jobs.service';
 import { PrismaModule } from 'src/prisma/prisma.module';
 import { UsuariosModule } from 'src/usuarios/usuarios.module';
 import { CoordenadoriasModule } from 'src/coordenadorias/coordenadorias.module';
@@ -22,7 +23,12 @@ import { PreProjetoChatGateway } from './pre-projeto-chat.gateway';
     TurnstileModule,
   ],
   controllers: [AgendamentosController],
-  providers: [AgendamentosService, MunicipeJwtAuthGuard, PreProjetoChatGateway],
+  providers: [
+    AgendamentosService,
+    ImportacaoJobsService,
+    MunicipeJwtAuthGuard,
+    PreProjetoChatGateway,
+  ],
   exports: [AgendamentosService],
 })
 export class AgendamentosModule {}
